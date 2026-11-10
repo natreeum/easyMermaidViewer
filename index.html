@@ -1,0 +1,473 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>Mermaid Viewer</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      color: #20242c;
+      background: #f5f6f8;
+      font: 14px/1.5 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    main {
+      display: grid;
+      grid-template-columns: minmax(280px, 34%) minmax(0, 1fr);
+      gap: 16px;
+      height: 100dvh;
+      padding: 20px;
+    }
+    .editor { display: flex; flex-direction: column; gap: 12px; min-height: 0; }
+    .editor[hidden] { display: none; }
+    main.editor-collapsed { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); height: 100dvh; }
+    label { font-weight: 650; }
+    textarea {
+      flex: 1;
+      width: 100%;
+      min-height: 180px;
+      resize: none;
+      padding: 16px;
+      border: 1px solid #d9dde5;
+      border-radius: 8px;
+      color: #252b36;
+      background: #fff;
+      font: 14px/1.7 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      tab-size: 2;
+    }
+    textarea:focus { outline: 2px solid #6366f1; outline-offset: 1px; }
+    .actions { display: flex; flex-wrap: wrap; gap: 8px; }
+    button {
+      padding: 9px 14px;
+      border: 1px solid #d9dde5;
+      border-radius: 7px;
+      background: #fff;
+      color: inherit;
+      font: inherit;
+      font-weight: 550;
+      cursor: pointer;
+    }
+    .actions button:first-child { border-color: #4f46e5; background: #4f46e5; color: #fff; }
+    button:hover { filter: brightness(.96); }
+    button:disabled { opacity: .55; cursor: wait; }
+    :focus-visible { outline: 2px solid #6366f1; outline-offset: 3px; }
+    #status { margin: 0; min-height: 21px; color: #667085; font-size: 12px; }
+    #status.error { color: #b42318; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 160px; overflow: auto; }
+    .preview-shell { position: relative; min-width: 0; min-height: 0; }
+    .preview-shell > .preview { height: 100%; }
+    .editor-toggle {
+      position: absolute;
+      top: clamp(96px, 14vh, 200px);
+      left: -8px;
+      z-index: 2;
+      display: grid;
+      place-items: center;
+      width: 28px;
+      height: 44px;
+      padding: 0;
+      transform: translateX(-50%);
+      box-shadow: 0 1px 5px #20242c1a;
+    }
+    .editor-toggle[aria-expanded="false"] svg { transform: rotate(180deg); }
+    .editor-collapsed .editor-toggle { left: 0; }
+    .preview {
+      min-width: 0;
+      min-height: 0;
+      overflow: hidden;
+      border: 1px solid #d9dde5;
+      border-radius: 8px;
+      background: #fff;
+    }
+    .viewport {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      touch-action: none;
+      user-select: none;
+      cursor: grab;
+      background-image: radial-gradient(#e1e5ec 1px, transparent 1px);
+      background-size: 20px 20px;
+    }
+    .viewport.dragging { cursor: grabbing; }
+    .drawing { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+    .drawing > svg { display: block; max-width: none !important; }
+    .empty { position: absolute; inset: 0; display: grid; place-items: center; color: #88909f; pointer-events: none; }
+    .hint {
+      position: absolute;
+      right: 12px;
+      bottom: 12px;
+      left: 12px;
+      margin: 0;
+      color: #667085;
+      font-size: 12px;
+      text-align: center;
+      pointer-events: none;
+    }
+    .hint span { display: inline-block; padding: 5px 10px; border-radius: 6px; background: #fffffff0; }
+    .reset-view {
+      position: absolute;
+      top: 12px;
+      right: 12px;
+      z-index: 1;
+      display: grid;
+      place-items: center;
+      width: 36px;
+      height: 36px;
+      padding: 0;
+      border-radius: 50%;
+      box-shadow: 0 1px 4px #20242c14;
+      touch-action: manipulation;
+    }
+    .reset-view:disabled { cursor: default; }
+    .standalone { height: 100dvh; }
+    .standalone .preview { height: 100%; border: 0; border-radius: 0; }
+    @media (max-width: 700px) {
+      main { grid-template-columns: 1fr; grid-template-rows: minmax(240px, 40%) minmax(260px, 1fr); height: max(100dvh, 600px); padding: 12px; gap: 12px; }
+      textarea { min-height: 90px; }
+      .editor-toggle { top: -6px; left: 50%; width: 44px; height: 28px; transform: translate(-50%, -50%); }
+      .editor-toggle svg { transform: rotate(90deg); }
+      .editor-toggle[aria-expanded="false"] svg { transform: rotate(270deg); }
+      .editor-collapsed .editor-toggle { top: 12px; left: 12px; width: 32px; height: 32px; transform: none; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <section id="code-panel" class="editor">
+      <label for="code">Mermaid code</label>
+      <textarea id="code" spellcheck="false" autocomplete="off" autocapitalize="off" wrap="off" aria-label="Mermaid 코드 편집기">flowchart LR
+  A[코드 작성] --> B{Render}
+  B --> C[현재 화면]
+  B --> D[새 창]
+  C --> E[확대 · 축소 · 이동]
+  D --> E</textarea>
+      <div class="actions">
+        <button id="render" type="button">Render</button>
+        <button id="new-window" type="button">Render in new window</button>
+      </div>
+      <p id="status" role="status" aria-live="polite">⌘ / Ctrl + Enter로 렌더링</p>
+    </section>
+    <div class="preview-shell">
+      <button id="toggle-editor" class="editor-toggle" type="button" title="코드 접기" aria-label="코드 접기" aria-controls="code-panel" aria-expanded="true">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="m14 6-6 6 6 6" />
+        </svg>
+      </button>
+      <section class="preview" aria-label="렌더링 결과">
+        <div class="viewport" tabindex="0" aria-label="다이어그램. 휠로 확대 축소, 드래그로 이동, 더블클릭으로 화면 맞춤. 키보드: +, -, 0, 방향키.">
+          <div class="drawing"></div>
+          <div class="empty">코드를 입력하고 Render를 누르세요.</div>
+          <p class="hint"><span>휠 / 핀치: 확대·축소 · 드래그: 이동 · 더블클릭: 화면 맞춤</span></p>
+          <button class="reset-view" type="button" title="Reset view" aria-label="Reset view — 화면 맞춤" disabled>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M3 10a9 9 0 1 1 2.6 8.4M3 4v6h6" />
+            </svg>
+          </button>
+        </div>
+      </section>
+    </div>
+  </main>
+  <script>
+    // This function is also embedded in the popup, so that it works after the editor closes.
+    function createViewer(viewport) {
+      const drawing = viewport.querySelector('.drawing');
+      const resetButton = viewport.querySelector('.reset-view');
+      const pointers = new Map();
+      let width = 0, height = 0, scale = 1, fitScale = 1, x = 0, y = 0;
+      let contentBounds = [];
+      const clamp = value => Math.max(fitScale * 0.9, Math.min(100, value));
+      // Keep 10% of the area that could fit on screen at the current scale.
+      const constrain = (bounds, tx, ty) => {
+        const vw = viewport.clientWidth, vh = viewport.clientHeight;
+        const w = bounds.width * scale, h = bounds.height * scale;
+        const maxW = Math.min(w, vw), maxH = Math.min(h, vh);
+        if (!maxW || !maxH) return { x: tx, y: ty };
+        const left = tx + bounds.x * scale, top = ty + bounds.y * scale;
+        const visibleW = Math.max(0, Math.min(vw, left + w) - Math.max(0, left));
+        const visibleH = Math.max(0, Math.min(vh, top + h) - Math.max(0, top));
+        const rx = visibleW / maxW, ry = visibleH / maxH;
+        if (rx * ry >= 0.1 - 1e-9) return { x: tx, y: ty };
+        // At an edge, preserve the already visible axis; at a corner, share the correction.
+        const keepX = rx >= ry ? Math.max(rx, Math.sqrt(0.1)) : 0.1 / Math.max(ry, Math.sqrt(0.1));
+        const keepY = 0.1 / keepX;
+        return {
+          x: Math.max(maxW * keepX - w, Math.min(vw - maxW * keepX, left)) - bounds.x * scale,
+          y: Math.max(maxH * keepY - h, Math.min(vh - maxH * keepY, top)) - bounds.y * scale
+        };
+      };
+      const constrainPosition = () => {
+        if (!width || !height) return;
+        const diagramBounds = { x: 0, y: 0, width, height };
+        ({ x, y } = constrain(diagramBounds, x, y));
+        let nearest, distance = Infinity;
+        for (const bounds of contentBounds) {
+          let candidate = constrain(bounds, x, y);
+          if (candidate.x === x && candidate.y === y) return;
+          const checked = constrain(diagramBounds, candidate.x, candidate.y);
+          if (checked.x !== candidate.x || checked.y !== candidate.y) {
+            candidate = constrain(diagramBounds,
+              viewport.clientWidth / 2 - (bounds.x + bounds.width / 2) * scale,
+              viewport.clientHeight / 2 - (bounds.y + bounds.height / 2) * scale);
+          }
+          const delta = (candidate.x - x) ** 2 + (candidate.y - y) ** 2;
+          if (delta < distance) { nearest = candidate; distance = delta; }
+        }
+        if (nearest) ({ x, y } = nearest);
+      };
+      const paint = () => {
+        constrainPosition();
+        drawing.style.transform = `translate(${x}px, ${y}px) scale(${scale})`;
+      };
+      const fit = () => {
+        if (!width || !height) return;
+        fitScale = Math.max(0.001, Math.min(1, Math.max(1, viewport.clientWidth - 64) / width, Math.max(1, viewport.clientHeight - 80) / height));
+        scale = fitScale;
+        x = (viewport.clientWidth - width * scale) / 2;
+        y = (viewport.clientHeight - height * scale) / 2;
+        paint();
+      };
+      resetButton.addEventListener('pointerdown', event => event.stopPropagation());
+      resetButton.addEventListener('click', fit);
+      const zoom = (factor, cx, cy) => {
+        const next = clamp(scale * factor);
+        x = cx - (cx - x) * next / scale;
+        y = cy - (cy - y) * next / scale;
+        scale = next;
+      };
+      const point = event => {
+        const rect = viewport.getBoundingClientRect();
+        return { x: event.clientX - rect.left, y: event.clientY - rect.top };
+      };
+      const gesture = () => {
+        const [a, b] = [...pointers.values()];
+        return b
+          ? { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, distance: Math.hypot(b.x - a.x, b.y - a.y) }
+          : { ...a, distance: 0 };
+      };
+      viewport.addEventListener('wheel', event => {
+        if (!width) return;
+        event.preventDefault();
+        const delta = event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? viewport.clientHeight : 1);
+        const p = point(event);
+        zoom(Math.exp(-Math.max(-200, Math.min(200, delta)) * 0.005), p.x, p.y);
+        paint();
+      }, { passive: false });
+      viewport.addEventListener('pointerdown', event => {
+        if (!width || event.button !== 0 || pointers.size >= 2) return;
+        viewport.focus({ preventScroll: true });
+        pointers.set(event.pointerId, point(event));
+        viewport.setPointerCapture(event.pointerId);
+        viewport.classList.add('dragging');
+        event.preventDefault();
+      });
+      viewport.addEventListener('pointermove', event => {
+        if (!pointers.has(event.pointerId)) return;
+        const before = gesture();
+        pointers.set(event.pointerId, point(event));
+        const after = gesture();
+        if (before.distance > 0 && after.distance > 0) zoom(after.distance / before.distance, before.x, before.y);
+        x += after.x - before.x;
+        y += after.y - before.y;
+        paint();
+      });
+      const release = event => {
+        pointers.delete(event.pointerId);
+        viewport.classList.toggle('dragging', pointers.size > 0);
+      };
+      for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) viewport.addEventListener(type, release);
+      viewport.addEventListener('dblclick', fit);
+      viewport.addEventListener('keydown', event => {
+        if (!width || event.ctrlKey || event.metaKey || event.altKey) return;
+        const steps = { ArrowLeft: [40, 0], ArrowRight: [-40, 0], ArrowUp: [0, 40], ArrowDown: [0, -40] };
+        if (event.key === '+' || event.key === '=') zoom(1.2, viewport.clientWidth / 2, viewport.clientHeight / 2);
+        else if (event.key === '-') zoom(1 / 1.2, viewport.clientWidth / 2, viewport.clientHeight / 2);
+        else if (event.key === '0') fit();
+        else if (steps[event.key]) { x += steps[event.key][0]; y += steps[event.key][1]; }
+        else return;
+        event.preventDefault();
+        paint();
+      });
+      new ResizeObserver(fit).observe(viewport);
+      return {
+        setSVG(markup) {
+          drawing.innerHTML = markup;
+          const svg = drawing.querySelector('svg');
+          const box = svg.viewBox.baseVal;
+          const bounds = box.width && box.height ? box : svg.getBBox();
+          width = Math.max(1, bounds.width);
+          height = Math.max(1, bounds.height);
+          svg.setAttribute('width', width);
+          svg.setAttribute('height', height);
+          svg.style.width = `${width}px`;
+          svg.style.height = `${height}px`;
+          // Prefer labels so a large empty region inside the SVG cannot count as content.
+          // Cache unscaled bounds once; panning and zooming need no per-element DOM reads.
+          const origin = drawing.getBoundingClientRect();
+          const measure = selector => [...svg.querySelectorAll(selector)].flatMap(element => {
+            if (element.closest('defs, marker, clipPath, mask, pattern, symbol')) return [];
+            const style = getComputedStyle(element);
+            if (style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity) === 0) return [];
+            const rect = element.getBoundingClientRect();
+            if (!rect.width || !rect.height) return [];
+            const bounds = { x: (rect.left - origin.left) / scale, y: (rect.top - origin.top) / scale, width: rect.width / scale, height: rect.height / scale };
+            // Ignore geometry outside the rendered SVG viewport.
+            const right = Math.min(width, bounds.x + bounds.width), bottom = Math.min(height, bounds.y + bounds.height);
+            bounds.x = Math.max(0, bounds.x); bounds.y = Math.max(0, bounds.y);
+            bounds.width = right - bounds.x; bounds.height = bottom - bounds.y;
+            return bounds.width > 0 && bounds.height > 0 ? [bounds] : [];
+          });
+          contentBounds = measure('text, foreignObject');
+          if (!contentBounds.length) contentBounds = measure('rect, circle, ellipse, polygon, image, path, line, polyline');
+          viewport.querySelector('.empty')?.remove();
+          resetButton.disabled = false;
+          fit();
+        }
+      };
+    }
+
+    const editor = document.getElementById('code');
+    const codePanel = document.getElementById('code-panel');
+    const editorToggle = document.getElementById('toggle-editor');
+    editorToggle.addEventListener('click', () => {
+      const collapsed = !codePanel.hidden;
+      codePanel.hidden = collapsed;
+      document.querySelector('main').classList.toggle('editor-collapsed', collapsed);
+      editorToggle.setAttribute('aria-expanded', String(!collapsed));
+      const label = collapsed ? '코드 펼치기' : '코드 접기';
+      editorToggle.title = label;
+      editorToggle.setAttribute('aria-label', label);
+    });
+    const renderButton = document.getElementById('render');
+    const windowButton = document.getElementById('new-window');
+    const status = document.getElementById('status');
+    const viewer = createViewer(document.querySelector('.viewport'));
+    const previewMarkup = document.querySelector('.preview').outerHTML;
+    const styles = document.querySelector('style').textContent;
+    let mermaidPromise;
+    let rendering = false;
+    let renderId = 0;
+
+    function loadMermaid() {
+      if (!mermaidPromise) {
+        mermaidPromise = import('https://cdn.jsdelivr.net/npm/mermaid@12.2.0/dist/mermaid.esm.min.mjs')
+          .then(({ default: mermaid }) => {
+            mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', suppressErrorRendering: true, theme: 'default', fontFamily: 'system-ui, sans-serif' });
+            return mermaid;
+          })
+          .catch(() => {
+            mermaidPromise = undefined;
+            throw new Error('Mermaid를 불러오지 못했습니다. 인터넷 연결을 확인한 뒤 다시 렌더링하세요.');
+          });
+      }
+      return mermaidPromise;
+    }
+
+    async function render(inNewWindow = false) {
+      if (rendering) return;
+      status.className = '';
+      const source = editor.value.trim();
+      if (!source) {
+        status.className = 'error';
+        status.textContent = 'Mermaid 코드를 입력하세요.';
+        editor.focus();
+        return;
+      }
+      // Open synchronously within the click handler, before any await.
+      const popup = inNewWindow ? window.open('', '_blank', 'popup,width=1200,height=800') : null;
+      if (inNewWindow && !popup) {
+        status.className = 'error';
+        status.textContent = '팝업이 차단되었습니다. 이 페이지의 팝업을 허용하세요.';
+        return;
+      }
+      if (popup) {
+        popup.opener = null;
+        popup.document.title = 'Mermaid Viewer';
+        popup.document.body.textContent = '렌더링 중…';
+      }
+      rendering = true;
+      renderButton.disabled = windowButton.disabled = true;
+      status.textContent = '렌더링 중…';
+      // Keep Mermaid's temporary elements isolated and remove them even on parse failures.
+      const scratch = document.createElement('div');
+      scratch.style.cssText = 'position:fixed;left:-100000px;top:0;width:1200px;visibility:hidden;pointer-events:none;';
+      document.body.append(scratch);
+      try {
+        const mermaid = await loadMermaid();
+        const { svg } = await mermaid.render(`diagram-${++renderId}`, source, scratch);
+        if (popup) {
+          if (popup.closed) throw new Error('결과 창이 닫혔습니다. 새 창 렌더링을 다시 실행하세요.');
+          // Escape < so labels cannot terminate the popup's script element.
+          const svgLiteral = JSON.stringify(svg).replace(/</g, '\\u003c');
+          popup.document.open();
+          popup.document.write(`<!doctype html><html lang="ko"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Mermaid Viewer</title><style>${styles}</style><\/head><body class="standalone">${previewMarkup}<script>(${createViewer.toString()})(document.querySelector('.viewport')).setSVG(${svgLiteral});<\/script><\/body><\/html>`);
+          popup.document.close();
+        } else {
+          viewer.setSVG(svg);
+        }
+        status.textContent = inNewWindow ? '새 창 렌더링 완료' : '렌더링 완료 · ⌘ / Ctrl + Enter로 다시 렌더링';
+      } catch (error) {
+        if (popup && !popup.closed) popup.close();
+        status.className = 'error';
+        status.textContent = error.message || String(error);
+      } finally {
+        scratch.remove();
+        rendering = false;
+        renderButton.disabled = windowButton.disabled = false;
+      }
+    }
+
+    function indentEditor(outdent) {
+      const { value, selectionStart: start, selectionEnd: end, selectionDirection: direction, scrollTop, scrollLeft } = editor;
+      let from = start, to = end, replacement = '  ', nextStart = start + 2, nextEnd = start + 2;
+      if (outdent || start !== end) {
+        from = start === 0 ? 0 : value.lastIndexOf('\n', start - 1) + 1;
+        // A selection ending at the start of a line does not include that line.
+        const lastSelected = end > start && value[end - 1] === '\n' ? end - 1 : end;
+        const lineEnd = value.indexOf('\n', lastSelected);
+        to = lineEnd === -1 ? value.length : lineEnd;
+        nextStart = start;
+        nextEnd = end;
+        let offset = from;
+        replacement = value.slice(from, to).split('\n').map(line => {
+          const removed = outdent ? (line.match(/^(?:\t| {1,2})/)?.[0].length || 0) : 0;
+          const shift = position => outdent
+            ? -Math.min(removed, Math.max(0, position - offset))
+            : (position >= offset ? 2 : 0);
+          nextStart += shift(start);
+          nextEnd += shift(end);
+          offset += line.length + 1;
+          return outdent ? line.slice(removed) : '  ' + line;
+        }).join('\n');
+      }
+      if (replacement === value.slice(from, to)) return;
+      editor.setSelectionRange(from, to);
+      // Native text insertion preserves the browser's undo/redo history.
+      if (!document.execCommand('insertText', false, replacement)) {
+        editor.setRangeText(replacement, from, to, 'end');
+        editor.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+      editor.setSelectionRange(nextStart, nextEnd, direction);
+      editor.scrollTop = scrollTop;
+      editor.scrollLeft = scrollLeft;
+    }
+
+    renderButton.addEventListener('click', () => render());
+    windowButton.addEventListener('click', () => render(true));
+    editor.addEventListener('keydown', event => {
+      if (event.isComposing) return;
+      if (event.key === 'Tab' && !event.metaKey && !event.ctrlKey && !event.altKey) {
+        event.preventDefault();
+        indentEditor(event.shiftKey);
+        return;
+      }
+      if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+        event.preventDefault();
+        render();
+      }
+    });
+  </script>
+</body>
+</html>
