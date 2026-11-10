@@ -133,6 +133,18 @@
       touch-action: manipulation;
     }
     .reset-view:disabled { cursor: default; }
+    .header-toggle {
+      position: absolute;
+      top: 56px;
+      right: 12px;
+      z-index: 2;
+      padding: 7px 10px;
+      font-size: 12px;
+      box-shadow: 0 1px 4px #20242c14;
+      touch-action: manipulation;
+    }
+    .header-toggle[hidden] { display: none; }
+    .header-toggle[aria-pressed="true"] { border-color: #c7d2fe; background: #eef2ff; color: #4338ca; }
     .standalone { height: 100dvh; }
     .standalone .preview { height: 100%; border: 0; border-radius: 0; }
     @media (max-width: 700px) {
@@ -177,6 +189,7 @@
               <path d="M3 10a9 9 0 1 1 2.6 8.4M3 4v6h6" />
             </svg>
           </button>
+          <button class="header-toggle" type="button" title="헤더가 상단을 벗어날 때 고정" aria-label="헤더 상단 고정" aria-pressed="true" hidden>Header 고정 ON</button>
         </div>
       </section>
     </div>
@@ -186,6 +199,7 @@
     function createViewer(viewport) {
       const drawing = viewport.querySelector('.drawing');
       const resetButton = viewport.querySelector('.reset-view');
+      const headerToggle = viewport.querySelector('.header-toggle');
       const header = viewport.querySelector('.participant-header') || document.createElement('div');
       header.className = 'participant-header';
       header.hidden = true;
@@ -196,7 +210,10 @@
       let contentBounds = [];
       let headerItems = [], headerSVG, headerTop = 0, headerNaturalHeight = 0;
       let headerScale = 1, headerHeight = 0, bodyTop = 0;
+      let headerEnabled = true;
       const clamp = value => Math.max(fitScale * 0.9, Math.min(100, value));
+      const isHeaderPinned = ty => headerEnabled && headerItems.length > 0 && ty + headerTop * scale < 0;
+      const headerInset = ty => isHeaderPinned(ty) ? headerHeight : 0;
       const sizeHeader = () => {
         if (!headerItems.length) { headerHeight = 0; return; }
         // Keep column centers aligned even when a very large zoom caps the header size.
@@ -207,6 +224,7 @@
       const createHeader = (svg, viewBox) => {
         header.replaceChildren();
         header.hidden = true;
+        headerToggle.hidden = true;
         headerItems = [];
         headerSVG = undefined;
         headerHeight = bodyTop = 0;
@@ -236,11 +254,10 @@
           normalized.append(item.element.cloneNode(true));
           group.append(normalized);
           headerSVG.append(group);
-          headerItems.push({ group, center: item.x + item.width / 2 });
-          // Keep the source labels in the accessible SVG, but don't draw/count them twice.
+          headerItems.push({ group, center: item.x + item.width / 2, source: item.element,
+            opacity: item.element.style.opacity, pointerEvents: item.element.style.pointerEvents });
+          // Exclude header labels from the body visibility constraint in either mode.
           item.element.dataset.pinnedParticipant = '';
-          item.element.style.opacity = '0';
-          item.element.style.pointerEvents = 'none';
         }
         // Preserve Mermaid's scoped styles and filters without duplicate DOM IDs.
         const elements = [headerSVG, ...headerSVG.querySelectorAll('*')];
@@ -258,15 +275,15 @@
         headerSVG.setAttribute('width', '100%');
         headerSVG.setAttribute('height', '100%');
         header.append(headerSVG);
-        header.hidden = false;
+        headerToggle.hidden = false;
       };
       // Keep 10% of the area that could fit on screen at the current scale.
-      const constrain = (bounds, tx, ty) => {
-        const vw = viewport.clientWidth, vh = Math.max(1, viewport.clientHeight - headerHeight);
+      const constrainInViewport = (bounds, tx, ty, topInset) => {
+        const vw = viewport.clientWidth, vh = Math.max(1, viewport.clientHeight - topInset);
         const w = bounds.width * scale, h = bounds.height * scale;
         const maxW = Math.min(w, vw), maxH = Math.min(h, vh);
         if (!maxW || !maxH) return { x: tx, y: ty };
-        const left = tx + bounds.x * scale, top = ty + bounds.y * scale - headerHeight;
+        const left = tx + bounds.x * scale, top = ty + bounds.y * scale - topInset;
         const visibleW = Math.max(0, Math.min(vw, left + w) - Math.max(0, left));
         const visibleH = Math.max(0, Math.min(vh, top + h) - Math.max(0, top));
         const rx = visibleW / maxW, ry = visibleH / maxH;
@@ -276,8 +293,16 @@
         const keepY = 0.1 / keepX;
         return {
           x: Math.max(maxW * keepX - w, Math.min(vw - maxW * keepX, left)) - bounds.x * scale,
-          y: Math.max(maxH * keepY - h, Math.min(vh - maxH * keepY, top)) - bounds.y * scale + headerHeight
+          y: Math.max(maxH * keepY - h, Math.min(vh - maxH * keepY, top)) - bounds.y * scale + topInset
         };
+      };
+      const constrain = (bounds, tx, ty) => {
+        const inset = headerInset(ty);
+        const position = constrainInViewport(bounds, tx, ty, inset);
+        // A correction can move the source header across the top edge.
+        const nextInset = headerInset(position.y);
+        return nextInset === inset ? position
+          : constrainInViewport(bounds, position.x, position.y, nextInset);
       };
       const constrainPosition = () => {
         if (!width || !height) return;
@@ -291,7 +316,7 @@
           if (checked.x !== candidate.x || checked.y !== candidate.y) {
             candidate = constrain(diagramBounds,
               viewport.clientWidth / 2 - (bounds.x + bounds.width / 2) * scale,
-              (viewport.clientHeight + headerHeight) / 2 - (bounds.y + bounds.height / 2) * scale);
+              (viewport.clientHeight + headerInset(y)) / 2 - (bounds.y + bounds.height / 2) * scale);
           }
           const delta = (candidate.x - x) ** 2 + (candidate.y - y) ** 2;
           if (delta < distance) { nearest = candidate; distance = delta; }
@@ -301,8 +326,14 @@
       const paint = () => {
         sizeHeader();
         constrainPosition();
+        const pinned = isHeaderPinned(y);
+        header.hidden = !pinned;
+        for (const { source, opacity, pointerEvents } of headerItems) {
+          source.style.opacity = pinned ? '0' : opacity;
+          source.style.pointerEvents = pinned ? 'none' : pointerEvents;
+        }
         drawing.style.transform = `translate(${x}px, ${y}px) scale(${scale})`;
-        if (headerItems.length) {
+        if (pinned) {
           header.style.height = `${headerHeight}px`;
           headerSVG.setAttribute('viewBox', `0 0 ${viewport.clientWidth} ${headerHeight}`);
           for (const { group, center } of headerItems) {
@@ -312,15 +343,23 @@
       };
       const fit = () => {
         if (!width || !height) return;
-        fitScale = Math.max(0.001, Math.min(1, Math.max(1, viewport.clientWidth - 64) / width, Math.max(1, viewport.clientHeight - 80 - (headerItems.length ? 16 : 0)) / height));
+        fitScale = Math.max(0.001, Math.min(1, Math.max(1, viewport.clientWidth - 64) / width, Math.max(1, viewport.clientHeight - 80) / height));
         scale = fitScale;
-        sizeHeader();
         x = (viewport.clientWidth - width * scale) / 2;
-        y = headerHeight + (viewport.clientHeight - headerHeight - (height - bodyTop) * scale) / 2 - bodyTop * scale;
+        y = (viewport.clientHeight - height * scale) / 2;
         paint();
       };
       resetButton.addEventListener('pointerdown', event => event.stopPropagation());
       resetButton.addEventListener('click', fit);
+      headerToggle.addEventListener('pointerdown', event => event.stopPropagation());
+      headerToggle.addEventListener('dblclick', event => event.stopPropagation());
+      headerToggle.addEventListener('click', () => {
+        headerEnabled = !headerEnabled;
+        headerToggle.setAttribute('aria-pressed', String(headerEnabled));
+        headerToggle.textContent = `Header 고정 ${headerEnabled ? 'ON' : 'OFF'}`;
+        headerToggle.title = headerEnabled ? '헤더가 상단을 벗어날 때 고정' : '헤더 고정 끔';
+        paint();
+      });
       const zoom = (factor, cx, cy) => {
         const next = clamp(scale * factor);
         x = cx - (cx - x) * next / scale;
