@@ -94,6 +94,17 @@
     .viewport.dragging { cursor: grabbing; }
     .drawing { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
     .drawing > svg { display: block; max-width: none !important; }
+    .participant-header {
+      position: absolute;
+      inset: 0 0 auto;
+      z-index: 1;
+      overflow: hidden;
+      background: #fff;
+      box-shadow: 0 1px 0 #e1e5ec;
+      pointer-events: none;
+    }
+    .participant-header[hidden] { display: none; }
+    .participant-header > svg { display: block; width: 100%; height: 100%; max-width: none !important; }
     .empty { position: absolute; inset: 0; display: grid; place-items: center; color: #88909f; pointer-events: none; }
     .hint {
       position: absolute;
@@ -111,7 +122,7 @@
       position: absolute;
       top: 12px;
       right: 12px;
-      z-index: 1;
+      z-index: 2;
       display: grid;
       place-items: center;
       width: 36px;
@@ -175,17 +186,87 @@
     function createViewer(viewport) {
       const drawing = viewport.querySelector('.drawing');
       const resetButton = viewport.querySelector('.reset-view');
+      const header = viewport.querySelector('.participant-header') || document.createElement('div');
+      header.className = 'participant-header';
+      header.hidden = true;
+      header.setAttribute('aria-hidden', 'true');
+      drawing.after(header);
       const pointers = new Map();
       let width = 0, height = 0, scale = 1, fitScale = 1, x = 0, y = 0;
       let contentBounds = [];
+      let headerItems = [], headerSVG, headerTop = 0, headerNaturalHeight = 0;
+      let headerScale = 1, headerHeight = 0, bodyTop = 0;
       const clamp = value => Math.max(fitScale * 0.9, Math.min(100, value));
+      const sizeHeader = () => {
+        if (!headerItems.length) { headerHeight = 0; return; }
+        // Keep column centers aligned even when a very large zoom caps the header size.
+        const limit = Math.max(1, Math.min(144, viewport.clientHeight * 0.25) - 16);
+        headerScale = Math.min(scale, limit / headerNaturalHeight);
+        headerHeight = headerNaturalHeight * headerScale + 16;
+      };
+      const createHeader = (svg, viewBox) => {
+        header.replaceChildren();
+        header.hidden = true;
+        headerItems = [];
+        headerSVG = undefined;
+        headerHeight = bodyTop = 0;
+        const origin = drawing.getBoundingClientRect();
+        const participants = [...svg.querySelectorAll('g[data-et="participant"]')].map(element => {
+          const rect = element.getBoundingClientRect();
+          return { element, x: (rect.left - origin.left) / scale, y: (rect.top - origin.top) / scale,
+            width: rect.width / scale, height: rect.height / scale };
+        }).filter(item => item.width > 0 && item.height > 0);
+        if (!participants.length) return;
+        // Only pin the initial row; participants created later stay with their messages.
+        const first = participants.reduce((a, b) => a.y < b.y ? a : b);
+        const row = participants.filter(item => item.y < first.y + first.height);
+        headerTop = Math.min(...row.map(item => item.y));
+        bodyTop = Math.max(...row.map(item => item.y + item.height));
+        headerNaturalHeight = bodyTop - headerTop;
+        headerSVG = svg.cloneNode(false);
+        for (const child of svg.children) {
+          if (child.matches('style, defs')) headerSVG.append(child.cloneNode(true));
+        }
+        const inverse = svg.getScreenCTM().inverse();
+        for (const item of row) {
+          const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+          const normalized = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+          const matrix = inverse.multiply(item.element.parentElement.getScreenCTM());
+          normalized.setAttribute('transform', `translate(${-viewBox.x} ${-viewBox.y}) matrix(${matrix.a} ${matrix.b} ${matrix.c} ${matrix.d} ${matrix.e} ${matrix.f})`);
+          normalized.append(item.element.cloneNode(true));
+          group.append(normalized);
+          headerSVG.append(group);
+          headerItems.push({ group, center: item.x + item.width / 2 });
+          // Keep the source labels in the accessible SVG, but don't draw/count them twice.
+          item.element.dataset.pinnedParticipant = '';
+          item.element.style.opacity = '0';
+          item.element.style.pointerEvents = 'none';
+        }
+        // Preserve Mermaid's scoped styles and filters without duplicate DOM IDs.
+        const elements = [headerSVG, ...headerSVG.querySelectorAll('*')];
+        const ids = new Map(elements.filter(element => element.id).map((element, index) =>
+          [element.id, `${svg.id}-pinned-${index}`]));
+        const rewrite = value => value.replace(/#([A-Za-z_][\w:.-]*)/g, (match, id) => ids.has(id) ? `#${ids.get(id)}` : match);
+        for (const element of elements) {
+          for (const attribute of [...element.attributes]) {
+            element.setAttribute(attribute.name, attribute.name === 'id' ? ids.get(attribute.value) : rewrite(attribute.value));
+          }
+          if (element.tagName === 'style') element.textContent = rewrite(element.textContent);
+        }
+        headerSVG.style.width = '100%';
+        headerSVG.style.height = '100%';
+        headerSVG.setAttribute('width', '100%');
+        headerSVG.setAttribute('height', '100%');
+        header.append(headerSVG);
+        header.hidden = false;
+      };
       // Keep 10% of the area that could fit on screen at the current scale.
       const constrain = (bounds, tx, ty) => {
-        const vw = viewport.clientWidth, vh = viewport.clientHeight;
+        const vw = viewport.clientWidth, vh = Math.max(1, viewport.clientHeight - headerHeight);
         const w = bounds.width * scale, h = bounds.height * scale;
         const maxW = Math.min(w, vw), maxH = Math.min(h, vh);
         if (!maxW || !maxH) return { x: tx, y: ty };
-        const left = tx + bounds.x * scale, top = ty + bounds.y * scale;
+        const left = tx + bounds.x * scale, top = ty + bounds.y * scale - headerHeight;
         const visibleW = Math.max(0, Math.min(vw, left + w) - Math.max(0, left));
         const visibleH = Math.max(0, Math.min(vh, top + h) - Math.max(0, top));
         const rx = visibleW / maxW, ry = visibleH / maxH;
@@ -195,12 +276,12 @@
         const keepY = 0.1 / keepX;
         return {
           x: Math.max(maxW * keepX - w, Math.min(vw - maxW * keepX, left)) - bounds.x * scale,
-          y: Math.max(maxH * keepY - h, Math.min(vh - maxH * keepY, top)) - bounds.y * scale
+          y: Math.max(maxH * keepY - h, Math.min(vh - maxH * keepY, top)) - bounds.y * scale + headerHeight
         };
       };
       const constrainPosition = () => {
         if (!width || !height) return;
-        const diagramBounds = { x: 0, y: 0, width, height };
+        const diagramBounds = { x: 0, y: bodyTop, width, height: Math.max(1, height - bodyTop) };
         ({ x, y } = constrain(diagramBounds, x, y));
         let nearest, distance = Infinity;
         for (const bounds of contentBounds) {
@@ -210,7 +291,7 @@
           if (checked.x !== candidate.x || checked.y !== candidate.y) {
             candidate = constrain(diagramBounds,
               viewport.clientWidth / 2 - (bounds.x + bounds.width / 2) * scale,
-              viewport.clientHeight / 2 - (bounds.y + bounds.height / 2) * scale);
+              (viewport.clientHeight + headerHeight) / 2 - (bounds.y + bounds.height / 2) * scale);
           }
           const delta = (candidate.x - x) ** 2 + (candidate.y - y) ** 2;
           if (delta < distance) { nearest = candidate; distance = delta; }
@@ -218,15 +299,24 @@
         if (nearest) ({ x, y } = nearest);
       };
       const paint = () => {
+        sizeHeader();
         constrainPosition();
         drawing.style.transform = `translate(${x}px, ${y}px) scale(${scale})`;
+        if (headerItems.length) {
+          header.style.height = `${headerHeight}px`;
+          headerSVG.setAttribute('viewBox', `0 0 ${viewport.clientWidth} ${headerHeight}`);
+          for (const { group, center } of headerItems) {
+            group.setAttribute('transform', `translate(${x + center * scale} 8) scale(${headerScale}) translate(${-center} ${-headerTop})`);
+          }
+        }
       };
       const fit = () => {
         if (!width || !height) return;
-        fitScale = Math.max(0.001, Math.min(1, Math.max(1, viewport.clientWidth - 64) / width, Math.max(1, viewport.clientHeight - 80) / height));
+        fitScale = Math.max(0.001, Math.min(1, Math.max(1, viewport.clientWidth - 64) / width, Math.max(1, viewport.clientHeight - 80 - (headerItems.length ? 16 : 0)) / height));
         scale = fitScale;
+        sizeHeader();
         x = (viewport.clientWidth - width * scale) / 2;
-        y = (viewport.clientHeight - height * scale) / 2;
+        y = headerHeight + (viewport.clientHeight - headerHeight - (height - bodyTop) * scale) / 2 - bodyTop * scale;
         paint();
       };
       resetButton.addEventListener('pointerdown', event => event.stopPropagation());
@@ -303,11 +393,12 @@
           svg.setAttribute('height', height);
           svg.style.width = `${width}px`;
           svg.style.height = `${height}px`;
+          createHeader(svg, bounds);
           // Prefer labels so a large empty region inside the SVG cannot count as content.
           // Cache unscaled bounds once; panning and zooming need no per-element DOM reads.
           const origin = drawing.getBoundingClientRect();
           const measure = selector => [...svg.querySelectorAll(selector)].flatMap(element => {
-            if (element.closest('defs, marker, clipPath, mask, pattern, symbol')) return [];
+            if (element.closest('defs, marker, clipPath, mask, pattern, symbol, [data-pinned-participant]')) return [];
             const style = getComputedStyle(element);
             if (style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity) === 0) return [];
             const rect = element.getBoundingClientRect();
