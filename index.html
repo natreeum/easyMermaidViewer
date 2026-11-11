@@ -58,18 +58,70 @@
     }
     .editor { display: flex; flex-direction: column; gap: 12px; min-width: 0; min-height: 0; }
     .editor[hidden] { display: none; }
-    .editor-header { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
-    .code-tabs { display: flex; gap: 4px; }
-    .code-tabs button {
+    .editor-header { position: relative; display: flex; align-items: center; gap: 10px; }
+    .code-tab-picker { display: flex; }
+    .code-tab-trigger, .rename-tab {
       display: grid;
       place-items: center;
       width: 28px;
       height: 28px;
       padding: 0;
-      border-radius: 50%;
-      font-size: 12px;
     }
-    .code-tabs button[aria-selected="true"] { border-color: #4f46e5; background: #4f46e5; color: #fff; }
+    .code-tab-popover {
+      position: absolute;
+      top: 100%;
+      left: 0;
+      z-index: 5;
+      width: min(320px, 100%);
+      padding-top: 6px;
+    }
+    .code-tab-menu {
+      display: grid;
+      gap: 4px;
+      padding: 6px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface);
+      box-shadow: 0 4px 16px var(--shadow);
+    }
+    .code-tabs { display: grid; gap: 4px; }
+    .code-tabs-page {
+      display: grid;
+      place-items: center;
+      width: 100%;
+      height: 24px;
+      padding: 0;
+      border-color: transparent;
+    }
+    .code-tabs-page:disabled { opacity: .3; cursor: default; filter: none; }
+    .code-tab-row { display: grid; grid-template-columns: minmax(0, 1fr) 28px; align-items: center; gap: 4px; }
+    .code-tab {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+      height: 36px;
+      padding: 5px 8px;
+      text-align: left;
+      border-color: transparent;
+    }
+    .code-tab-number { flex: none; width: 20px; text-align: center; font-size: 12px; }
+    .code-tab-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .code-tab[aria-selected="true"] { border-color: var(--active-border); background: var(--active-bg); color: var(--active-text); }
+    .code-tab-name-input {
+      grid-column: 1 / -1;
+      min-width: 0;
+      width: 100%;
+      height: 36px;
+      padding: 5px 8px;
+      border: 1px solid var(--focus);
+      border-radius: 7px;
+      color: var(--text);
+      background: var(--surface);
+      font: inherit;
+    }
+    .code-tab-name-input::placeholder { color: var(--muted); }
+    .code-tab-popover[hidden], .code-tab-row[hidden], .code-tab-row > [hidden] { display: none; }
     .code-tab-panel { display: flex; flex: 1; min-height: 0; }
     main.editor-collapsed { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); height: 100dvh; }
     label { font-weight: 650; }
@@ -241,12 +293,24 @@
     <section id="code-panel" class="editor">
       <div class="editor-header">
         <label for="code">Mermaid code</label>
-        <div class="code-tabs" role="tablist" aria-label="코드 탭">
-          <button id="code-tab-1" type="button" role="tab" aria-label="코드 1" aria-controls="code-tab-panel" aria-selected="true">1</button>
-          <button id="code-tab-2" type="button" role="tab" aria-label="코드 2" aria-controls="code-tab-panel" aria-selected="false" tabindex="-1">2</button>
-          <button id="code-tab-3" type="button" role="tab" aria-label="코드 3" aria-controls="code-tab-panel" aria-selected="false" tabindex="-1">3</button>
-          <button id="code-tab-4" type="button" role="tab" aria-label="코드 4" aria-controls="code-tab-panel" aria-selected="false" tabindex="-1">4</button>
-          <button id="code-tab-5" type="button" role="tab" aria-label="코드 5" aria-controls="code-tab-panel" aria-selected="false" tabindex="-1">5</button>
+        <div id="code-tab-picker" class="code-tab-picker">
+          <button id="code-tab-trigger" class="code-tab-trigger" type="button" title="코드 탭 목록" aria-label="코드 탭 목록" aria-expanded="false" aria-controls="code-tab-popover">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
+              <circle cx="4" cy="6" r="1" /><circle cx="4" cy="12" r="1" /><circle cx="4" cy="18" r="1" />
+              <path d="M9 6h12M9 12h12M9 18h12" />
+            </svg>
+          </button>
+          <div id="code-tab-popover" class="code-tab-popover" hidden>
+            <div class="code-tab-menu">
+              <button id="code-tabs-prev" class="code-tabs-page" type="button" title="이전 5개 탭" aria-label="이전 5개 탭" aria-controls="code-tabs" disabled>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 15 6-6 6 6" /></svg>
+              </button>
+              <div id="code-tabs" class="code-tabs" role="tablist" aria-label="코드 탭" aria-orientation="vertical"></div>
+              <button id="code-tabs-next" class="code-tabs-page" type="button" title="다음 5개 탭" aria-label="다음 5개 탭" aria-controls="code-tabs">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
+              </button>
+            </div>
+          </div>
         </div>
       </div>
       <div id="code-tab-panel" class="code-tab-panel" role="tabpanel" aria-labelledby="code-tab-1">
@@ -774,29 +838,91 @@
     let lastRenderedSource = '', preserveViewOnThemeChange = false;
     let rendering = false;
     let pendingTabRender = false;
-    const codeTabButtons = [...document.querySelectorAll('.code-tabs [role="tab"]')];
+    const codeTabCount = 50;
+    const codeTabsPerPage = 5;
+    const codeTabList = document.getElementById('code-tabs');
+    const codeTabsPrev = document.getElementById('code-tabs-prev');
+    const codeTabsNext = document.getElementById('code-tabs-next');
+    const codeTabPicker = document.getElementById('code-tab-picker');
+    const codeTabTrigger = document.getElementById('code-tab-trigger');
+    const codeTabPopover = document.getElementById('code-tab-popover');
     const codeTabPanel = document.getElementById('code-tab-panel');
     const storageStatus = document.getElementById('storage-status');
     const codeStorageKey = 'mermaid-viewer:code-tabs:v1';
-    let codeTabs = [editor.value, '', '', '', ''];
+    let codeTabs = Array.from({ length: codeTabCount }, (_, index) => index === 0 ? editor.value : '');
+    let codeTabNames = Array(codeTabCount).fill('');
     let activeCodeTab = 0;
+    let codeTabPage = 0;
+    let renamingTab = -1;
     let tabRevision = 0;
     let saveTimer;
     let savedTabState;
 
-    const serializeCodeTabs = () => JSON.stringify({ codes: codeTabs, activeTab: activeCodeTab });
+    const codeTabRows = Array.from({ length: codeTabCount }, (_, index) => {
+      const row = document.createElement('div');
+      row.className = 'code-tab-row';
+      row.setAttribute('role', 'presentation');
+      row.hidden = true;
+      const button = document.createElement('button');
+      button.id = `code-tab-${index + 1}`;
+      button.type = 'button';
+      button.setAttribute('role', 'tab');
+      button.setAttribute('aria-controls', 'code-tab-panel');
+      const number = document.createElement('span');
+      number.className = 'code-tab-number';
+      number.textContent = String(index + 1);
+      const name = document.createElement('span');
+      name.className = 'code-tab-name';
+      button.classList.add('code-tab');
+      button.replaceChildren(number, name);
+      const input = document.createElement('input');
+      input.className = 'code-tab-name-input';
+      input.type = 'text';
+      input.maxLength = 60;
+      input.placeholder = '탭 이름';
+      input.autocomplete = 'off';
+      input.setAttribute('aria-label', `탭 ${index + 1} 이름`);
+      input.hidden = true;
+      const rename = document.createElement('button');
+      rename.className = 'rename-tab';
+      rename.type = 'button';
+      rename.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m16 3 5 5M3 21l5-1L21 7a2.1 2.1 0 0 0-5-5L3 15Z" /></svg>';
+      row.append(button, input, rename);
+      codeTabList.append(row);
+      return { row, button, name, input, rename };
+    });
+    const codeTabButtons = codeTabRows.map(({ button }) => button);
+
+    const codeTabLabel = index => `탭 ${index + 1}${codeTabNames[index] ? ` · ${codeTabNames[index]}` : ''}`;
+    const visibleTabStop = () => Math.floor(activeCodeTab / codeTabsPerPage) === codeTabPage
+      ? activeCodeTab : codeTabPage * codeTabsPerPage;
+    const serializeCodeTabs = () => JSON.stringify({ codes: codeTabs, names: codeTabNames, activeTab: activeCodeTab });
     const showStorageError = message => {
       storageStatus.textContent = message;
       storageStatus.hidden = false;
     };
     const syncCodeTabUI = () => {
-      codeTabButtons.forEach((button, index) => {
+      const pageStart = codeTabPage * codeTabsPerPage;
+      const pageEnd = Math.min(pageStart + codeTabsPerPage, codeTabCount);
+      const tabStop = visibleTabStop();
+      codeTabRows.forEach(({ row, button, name, rename }, index) => {
+        row.hidden = index < pageStart || index >= pageEnd;
         const selected = index === activeCodeTab;
+        name.textContent = codeTabNames[index] || '이름 없음';
+        button.title = codeTabLabel(index);
+        button.setAttribute('aria-label', codeTabLabel(index));
         button.setAttribute('aria-selected', String(selected));
-        button.tabIndex = selected ? 0 : -1;
+        button.tabIndex = index === tabStop ? 0 : -1;
+        rename.title = `${codeTabLabel(index)} 이름 수정`;
+        rename.setAttribute('aria-label', rename.title);
       });
+      codeTabsPrev.disabled = codeTabPage === 0;
+      codeTabsNext.disabled = pageEnd === codeTabCount;
+      codeTabList.setAttribute('aria-label', `코드 탭 ${pageStart + 1}~${pageEnd}`);
       codeTabPanel.setAttribute('aria-labelledby', codeTabButtons[activeCodeTab].id);
-      editor.setAttribute('aria-label', `Mermaid 코드 편집기 — 탭 ${activeCodeTab + 1}`);
+      codeTabTrigger.title = `코드 탭 목록 · 현재 ${codeTabLabel(activeCodeTab)}`;
+      codeTabTrigger.setAttribute('aria-label', codeTabTrigger.title);
+      editor.setAttribute('aria-label', `Mermaid 코드 편집기 — ${codeTabLabel(activeCodeTab)}`);
     };
     const saveCodeTabs = () => {
       clearTimeout(saveTimer);
@@ -821,7 +947,7 @@
       pendingTabRender = false;
       if (!editor.value.trim()) {
         status.className = '';
-        status.textContent = `탭 ${activeCodeTab + 1} · 코드를 입력하세요.`;
+        status.textContent = `${codeTabLabel(activeCodeTab)} · 코드를 입력하세요.`;
         return;
       }
       if (rendering) {
@@ -832,9 +958,11 @@
       void render();
     };
     const selectCodeTab = index => {
+      if (!Number.isInteger(index) || index < 0 || index >= codeTabCount) return;
       if (index === activeCodeTab) return;
       codeTabs[activeCodeTab] = editor.value;
       activeCodeTab = index;
+      codeTabPage = Math.floor(index / codeTabsPerPage);
       tabRevision++;
       editor.value = codeTabs[index];
       editor.setSelectionRange(0, 0);
@@ -848,41 +976,146 @@
       status.className = '';
       renderSelectedTab();
     };
+
+    const finishTabRename = (commit, restoreFocus = false) => {
+      if (renamingTab < 0) return;
+      const index = renamingTab;
+      renamingTab = -1;
+      const { button, input, rename } = codeTabRows[index];
+      const name = input.value.trim();
+      if (commit && name !== codeTabNames[index]) {
+        codeTabNames[index] = name;
+        scheduleCodeSave();
+      }
+      input.hidden = true;
+      button.hidden = rename.hidden = false;
+      syncCodeTabUI();
+      if (restoreFocus) rename.focus();
+    };
+    const openTabMenu = () => {
+      if (codeTabPopover.hidden) {
+        codeTabPage = Math.floor(activeCodeTab / codeTabsPerPage);
+        syncCodeTabUI();
+      }
+      codeTabPopover.hidden = false;
+      codeTabTrigger.setAttribute('aria-expanded', 'true');
+    };
+    const closeTabMenu = (restoreFocus = false) => {
+      const focusInside = codeTabPopover.contains(document.activeElement);
+      finishTabRename(true);
+      codeTabPopover.hidden = true;
+      codeTabTrigger.setAttribute('aria-expanded', 'false');
+      if (restoreFocus || focusInside) codeTabTrigger.focus();
+    };
+    const moveCodeTabPage = direction => {
+      const lastPage = Math.ceil(codeTabCount / codeTabsPerPage) - 1;
+      const nextPage = Math.max(0, Math.min(lastPage, codeTabPage + direction));
+      if (nextPage === codeTabPage) return;
+      const focused = document.activeElement;
+      finishTabRename(true);
+      codeTabPage = nextPage;
+      syncCodeTabUI();
+      // Keep focus in the menu when a row disappears or an arrow becomes disabled.
+      if ((focused === codeTabsPrev && codeTabsPrev.disabled)
+        || (focused === codeTabsNext && codeTabsNext.disabled)
+        || codeTabRows.some(({ row }) => row.hidden && row.contains(focused))) {
+        codeTabButtons[visibleTabStop()].focus({ preventScroll: true });
+      }
+    };
+
     // Read storage once on load. All edits and tab switches use the in-memory state.
     try {
       const stored = localStorage.getItem(codeStorageKey);
       if (stored !== null) {
         const data = JSON.parse(stored);
-        if (!data || !Array.isArray(data.codes) || data.codes.length !== 5
+        if (!data || !Array.isArray(data.codes) || ![codeTabsPerPage, codeTabCount].includes(data.codes.length)
           || !data.codes.every(code => typeof code === 'string')) throw new Error('Invalid saved tabs');
-        codeTabs = data.codes;
-        if (Number.isInteger(data.activeTab) && data.activeTab >= 0 && data.activeTab < 5) activeCodeTab = data.activeTab;
+        // Extend old five-tab saves in memory without an extra storage write on load.
+        codeTabs = Array.from({ length: codeTabCount }, (_, index) => data.codes[index] ?? '');
+        if (Array.isArray(data.names) && data.names.length === data.codes.length && data.names.every(name => typeof name === 'string')) {
+          codeTabNames = Array.from({ length: codeTabCount }, (_, index) => (data.names[index] ?? '').trim().slice(0, 60));
+        }
+        if (Number.isInteger(data.activeTab) && data.activeTab >= 0 && data.activeTab < data.codes.length) activeCodeTab = data.activeTab;
       }
     } catch {
       showStorageError('저장된 코드를 불러오지 못했습니다.');
     }
     savedTabState = serializeCodeTabs();
     editor.value = codeTabs[activeCodeTab];
+    codeTabPage = Math.floor(activeCodeTab / codeTabsPerPage);
     syncCodeTabUI();
+    codeTabPicker.addEventListener('focusout', event => {
+      // activeElement can temporarily be body while focus moves between menu controls.
+      // A missing target also occurs when pagination hides or disables a focused control.
+      if (event.relatedTarget && !codeTabPicker.contains(event.relatedTarget)) closeTabMenu();
+    });
+    codeTabPicker.addEventListener('keydown', event => {
+      if (event.key !== 'Escape' || event.isComposing) return;
+      event.preventDefault();
+      closeTabMenu(true);
+    });
+    codeTabTrigger.addEventListener('click', () => {
+      if (codeTabPopover.hidden) openTabMenu();
+      else closeTabMenu();
+    });
+    codeTabTrigger.addEventListener('keydown', event => {
+      if (codeTabPopover.hidden || !['ArrowDown', 'ArrowUp'].includes(event.key)) return;
+      event.preventDefault();
+      codeTabButtons[visibleTabStop()].focus();
+    });
+    codeTabsPrev.addEventListener('click', () => moveCodeTabPage(-1));
+    codeTabsNext.addEventListener('click', () => moveCodeTabPage(1));
+    document.addEventListener('pointerdown', event => {
+      if (!codeTabPicker.contains(event.target)) closeTabMenu();
+    });
     codeTabButtons.forEach((button, index) => {
-      button.addEventListener('click', () => selectCodeTab(index));
+      button.addEventListener('click', () => {
+        finishTabRename(true);
+        selectCodeTab(index);
+        closeTabMenu();
+        editor.focus({ preventScroll: true });
+      });
       button.addEventListener('keydown', event => {
-        if (event.ctrlKey || event.metaKey || event.altKey) return;
+        if (event.ctrlKey || event.metaKey || event.altKey || event.isComposing) return;
         let next;
-        if (event.key === 'ArrowLeft') next = (index + 4) % 5;
-        else if (event.key === 'ArrowRight') next = (index + 1) % 5;
-        else if (event.key === 'Home') next = 0;
-        else if (event.key === 'End') next = 4;
+        if (event.key === 'ArrowUp' || event.key === 'ArrowLeft') next = Math.max(0, index - 1);
+        else if (event.key === 'ArrowDown' || event.key === 'ArrowRight') next = Math.min(codeTabCount - 1, index + 1);
+        else if (event.key === 'Home') next = codeTabPage * codeTabsPerPage;
+        else if (event.key === 'End') next = Math.min(codeTabCount - 1, (codeTabPage + 1) * codeTabsPerPage - 1);
         else return;
         event.preventDefault();
         selectCodeTab(next);
         codeTabButtons[next].focus();
       });
     });
+    codeTabRows.forEach(({ button, input, rename }, index) => {
+      rename.addEventListener('click', () => {
+        finishTabRename(true);
+        renamingTab = index;
+        input.value = codeTabNames[index];
+        button.hidden = rename.hidden = true;
+        input.hidden = false;
+        input.focus();
+        input.select();
+      });
+      input.addEventListener('blur', () => {
+        if (renamingTab === index) finishTabRename(true);
+      });
+      input.addEventListener('keydown', event => {
+        if (event.isComposing || !['Enter', 'Escape'].includes(event.key)) return;
+        event.preventDefault();
+        event.stopPropagation();
+        finishTabRename(event.key === 'Enter', true);
+      });
+    });
     editor.addEventListener('input', scheduleCodeSave);
-    window.addEventListener('pagehide', saveCodeTabs);
+    const flushCodeTabs = () => {
+      finishTabRename(true);
+      saveCodeTabs();
+    };
+    window.addEventListener('pagehide', flushCodeTabs);
     document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'hidden') saveCodeTabs();
+      if (document.visibilityState === 'hidden') flushCodeTabs();
     });
 
     bindThemeToggle(currentTheme, theme => {
