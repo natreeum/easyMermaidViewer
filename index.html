@@ -15,12 +15,12 @@
     }
     main {
       display: grid;
-      grid-template-columns: minmax(280px, 34%) minmax(0, 1fr);
+      grid-template-columns: clamp(280px, var(--editor-width, 34%), calc(100% - 296px)) minmax(280px, 1fr);
       gap: 16px;
       height: 100dvh;
       padding: 20px;
     }
-    .editor { display: flex; flex-direction: column; gap: 12px; min-height: 0; }
+    .editor { display: flex; flex-direction: column; gap: 12px; min-width: 0; min-height: 0; }
     .editor[hidden] { display: none; }
     main.editor-collapsed { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); height: 100dvh; }
     label { font-weight: 650; }
@@ -57,6 +57,29 @@
     #status.error { color: #b42318; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 160px; overflow: auto; }
     .preview-shell { position: relative; min-width: 0; min-height: 0; }
     .preview-shell > .preview { height: 100%; }
+    .editor-resizer {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      left: -16px;
+      z-index: 1;
+      width: 16px;
+      cursor: col-resize;
+      touch-action: none;
+      user-select: none;
+    }
+    .editor-resizer::after {
+      content: '';
+      position: absolute;
+      inset: 0 7px;
+      border-radius: 2px;
+      background: #d9dde5;
+    }
+    .editor-resizer:hover::after,
+    .editor-resizer:focus-visible::after,
+    .resizing-editor .editor-resizer::after { background: #6366f1; }
+    .editor-collapsed .editor-resizer { display: none; }
+    .resizing-editor, .resizing-editor * { cursor: col-resize !important; user-select: none !important; }
     .editor-toggle {
       position: absolute;
       top: clamp(96px, 14vh, 200px);
@@ -150,6 +173,7 @@
     @media (max-width: 700px) {
       main { grid-template-columns: 1fr; grid-template-rows: minmax(240px, 40%) minmax(260px, 1fr); height: max(100dvh, 600px); padding: 12px; gap: 12px; }
       textarea { min-height: 90px; }
+      .editor-resizer { display: none; }
       .editor-toggle { top: -6px; left: 50%; width: 44px; height: 28px; transform: translate(-50%, -50%); }
       .editor-toggle svg { transform: rotate(90deg); }
       .editor-toggle[aria-expanded="false"] svg { transform: rotate(270deg); }
@@ -174,6 +198,7 @@
       <p id="status" role="status" aria-live="polite">⌘ / Ctrl + Enter로 렌더링</p>
     </section>
     <div class="preview-shell">
+      <div id="resize-editor" class="editor-resizer" role="separator" tabindex="0" aria-label="코드 편집기 너비 조절" aria-orientation="vertical" aria-controls="code-panel" aria-valuemin="280" title="드래그하여 코드 편집기 너비 조절"></div>
       <button id="toggle-editor" class="editor-toggle" type="button" title="코드 접기" aria-label="코드 접기" aria-controls="code-panel" aria-expanded="true">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="m14 6-6 6 6 6" />
@@ -459,16 +484,80 @@
     }
 
     const editor = document.getElementById('code');
+    const layout = document.querySelector('main');
     const codePanel = document.getElementById('code-panel');
     const editorToggle = document.getElementById('toggle-editor');
+    const editorResizer = document.getElementById('resize-editor');
+    const compactLayout = matchMedia('(max-width: 700px)');
+    const minPanelWidth = 280;
+    let resizeGesture;
+    const editorWidthLimit = () => {
+      const style = getComputedStyle(layout);
+      return Math.max(minPanelWidth, layout.clientWidth - parseFloat(style.paddingLeft)
+        - parseFloat(style.paddingRight) - parseFloat(style.columnGap) - minPanelWidth);
+    };
+    const syncEditorResizer = () => {
+      if (compactLayout.matches || codePanel.hidden) return;
+      const width = Math.round(codePanel.getBoundingClientRect().width);
+      editorResizer.setAttribute('aria-valuemax', String(Math.round(editorWidthLimit())));
+      editorResizer.setAttribute('aria-valuenow', String(width));
+      editorResizer.setAttribute('aria-valuetext', `${width}px`);
+    };
+    const setEditorWidth = width => {
+      const next = Math.max(minPanelWidth, Math.min(editorWidthLimit(), width));
+      // Keep the chosen width through collapse/expand; CSS clamps it on smaller windows.
+      layout.style.setProperty('--editor-width', `${next}px`);
+      syncEditorResizer();
+    };
+    const finishEditorResize = () => {
+      if (!resizeGesture) return;
+      const { pointerId } = resizeGesture;
+      resizeGesture = undefined;
+      document.body.classList.remove('resizing-editor');
+      if (editorResizer.hasPointerCapture(pointerId)) editorResizer.releasePointerCapture(pointerId);
+    };
+    editorResizer.addEventListener('pointerdown', event => {
+      if (event.button !== 0 || resizeGesture || compactLayout.matches || codePanel.hidden) return;
+      event.preventDefault();
+      editorResizer.focus({ preventScroll: true });
+      resizeGesture = { pointerId: event.pointerId, startX: event.clientX, width: codePanel.getBoundingClientRect().width };
+      editorResizer.setPointerCapture(event.pointerId);
+      document.body.classList.add('resizing-editor');
+    });
+    editorResizer.addEventListener('pointermove', event => {
+      if (event.pointerId !== resizeGesture?.pointerId) return;
+      setEditorWidth(resizeGesture.width + event.clientX - resizeGesture.startX);
+    });
+    for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) {
+      editorResizer.addEventListener(type, event => {
+        if (event.pointerId === resizeGesture?.pointerId) finishEditorResize();
+      });
+    }
+    editorResizer.addEventListener('keydown', event => {
+      if (compactLayout.matches || codePanel.hidden || event.ctrlKey || event.metaKey || event.altKey) return;
+      const width = codePanel.getBoundingClientRect().width;
+      const widths = { ArrowLeft: width - 16, ArrowRight: width + 16, Home: minPanelWidth, End: editorWidthLimit() };
+      if (!(event.key in widths)) return;
+      event.preventDefault();
+      setEditorWidth(widths[event.key]);
+    });
+    window.addEventListener('blur', finishEditorResize);
+    compactLayout.addEventListener('change', () => {
+      finishEditorResize();
+      syncEditorResizer();
+    });
+    new ResizeObserver(syncEditorResizer).observe(codePanel);
+    syncEditorResizer();
     editorToggle.addEventListener('click', () => {
+      finishEditorResize();
       const collapsed = !codePanel.hidden;
       codePanel.hidden = collapsed;
-      document.querySelector('main').classList.toggle('editor-collapsed', collapsed);
+      layout.classList.toggle('editor-collapsed', collapsed);
       editorToggle.setAttribute('aria-expanded', String(!collapsed));
       const label = collapsed ? '코드 펼치기' : '코드 접기';
       editorToggle.title = label;
       editorToggle.setAttribute('aria-label', label);
+      if (!collapsed) syncEditorResizer();
     });
     const renderButton = document.getElementById('render');
     const windowButton = document.getElementById('new-window');
