@@ -6,11 +6,47 @@
   <meta name="color-scheme" content="light">
   <title>Mermaid Viewer</title>
   <style>
+    :root {
+      color-scheme: light;
+      --page-bg: #f5f6f8;
+      --surface: #fff;
+      --text: #20242c;
+      --editor-text: #252b36;
+      --border: #d9dde5;
+      --muted: #667085;
+      --empty-text: #88909f;
+      --grid: #e1e5ec;
+      --hint-bg: #fffffff0;
+      --error: #b42318;
+      --focus: #6366f1;
+      --active-bg: #eef2ff;
+      --active-border: #c7d2fe;
+      --active-text: #4338ca;
+      --shadow: #20242c14;
+    }
+    :root[data-theme="dark"] {
+      color-scheme: dark;
+      --page-bg: #111827;
+      --surface: #1b2432;
+      --text: #e5e7eb;
+      --editor-text: #e2e8f0;
+      --border: #374151;
+      --muted: #a5b0c0;
+      --empty-text: #94a3b8;
+      --grid: #334155;
+      --hint-bg: #1b2432f0;
+      --error: #fda29b;
+      --focus: #818cf8;
+      --active-bg: #292b4b;
+      --active-border: #4b4a88;
+      --active-text: #c7d2fe;
+      --shadow: #00000040;
+    }
     * { box-sizing: border-box; }
     body {
       margin: 0;
-      color: #20242c;
-      background: #f5f6f8;
+      color: var(--text);
+      background: var(--page-bg);
       font: 14px/1.5 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     }
     main {
@@ -43,20 +79,20 @@
       min-height: 180px;
       resize: none;
       padding: 16px;
-      border: 1px solid #d9dde5;
+      border: 1px solid var(--border);
       border-radius: 8px;
-      color: #252b36;
-      background: #fff;
+      color: var(--editor-text);
+      background: var(--surface);
       font: 14px/1.7 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
       tab-size: 2;
     }
-    textarea:focus { outline: 2px solid #6366f1; outline-offset: 1px; }
+    textarea:focus { outline: 2px solid var(--focus); outline-offset: 1px; }
     .actions { display: flex; flex-wrap: wrap; gap: 8px; }
     button {
       padding: 9px 14px;
-      border: 1px solid #d9dde5;
+      border: 1px solid var(--border);
       border-radius: 7px;
-      background: #fff;
+      background: var(--surface);
       color: inherit;
       font: inherit;
       font-weight: 550;
@@ -65,10 +101,10 @@
     .actions button:first-child { border-color: #4f46e5; background: #4f46e5; color: #fff; }
     button:hover { filter: brightness(.96); }
     button:disabled { opacity: .55; cursor: wait; }
-    :focus-visible { outline: 2px solid #6366f1; outline-offset: 3px; }
-    #status { margin: 0; min-height: 21px; color: #667085; font-size: 12px; }
-    #status.error { color: #b42318; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 160px; overflow: auto; }
-    #storage-status { margin: 0; color: #b42318; font-size: 12px; }
+    :focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
+    #status { margin: 0; min-height: 21px; color: var(--muted); font-size: 12px; }
+    #status.error { color: var(--error); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 160px; overflow: auto; }
+    #storage-status { margin: 0; color: var(--error); font-size: 12px; }
     .preview-shell { position: relative; min-width: 0; min-height: 0; }
     .preview-shell > .preview { height: 100%; }
     .editor-resizer {
@@ -87,11 +123,11 @@
       position: absolute;
       inset: 0 7px;
       border-radius: 2px;
-      background: #d9dde5;
+      background: var(--border);
     }
     .editor-resizer:hover::after,
     .editor-resizer:focus-visible::after,
-    .resizing-editor .editor-resizer::after { background: #6366f1; }
+    .resizing-editor .editor-resizer::after { background: var(--focus); }
     .editor-collapsed .editor-resizer { display: none; }
     .resizing-editor, .resizing-editor * { cursor: col-resize !important; user-select: none !important; }
     .editor-toggle {
@@ -105,7 +141,7 @@
       height: 44px;
       padding: 0;
       transform: translateX(-50%);
-      box-shadow: 0 1px 5px #20242c1a;
+      box-shadow: 0 1px 5px var(--shadow);
     }
     .editor-toggle[aria-expanded="false"] svg { transform: rotate(180deg); }
     .editor-collapsed .editor-toggle { left: 0; }
@@ -113,9 +149,9 @@
       min-width: 0;
       min-height: 0;
       overflow: hidden;
-      border: 1px solid #d9dde5;
+      border: 1px solid var(--border);
       border-radius: 8px;
-      background: #fff;
+      background: var(--surface);
     }
     .viewport {
       position: relative;
@@ -125,7 +161,7 @@
       touch-action: none;
       user-select: none;
       cursor: grab;
-      background-image: radial-gradient(#e1e5ec 1px, transparent 1px);
+      background-image: radial-gradient(var(--grid) 1px, transparent 1px);
       background-size: 20px 20px;
     }
     .viewport.dragging { cursor: grabbing; }
@@ -136,26 +172,27 @@
       inset: 0 0 auto;
       z-index: 1;
       overflow: hidden;
-      background: #fff;
-      box-shadow: 0 1px 0 #e1e5ec;
+      background: var(--surface);
+      box-shadow: 0 1px 0 var(--grid);
       pointer-events: none;
     }
     .participant-header[hidden] { display: none; }
     .participant-header > svg { display: block; width: 100%; height: 100%; max-width: none !important; }
-    .empty { position: absolute; inset: 0; display: grid; place-items: center; color: #88909f; pointer-events: none; }
+    .empty { position: absolute; inset: 0; display: grid; place-items: center; color: var(--empty-text); pointer-events: none; }
     .hint {
       position: absolute;
       right: 12px;
       bottom: 12px;
       left: 12px;
       margin: 0;
-      color: #667085;
+      color: var(--muted);
       font-size: 12px;
       text-align: center;
       pointer-events: none;
     }
-    .hint span { display: inline-block; padding: 5px 10px; border-radius: 6px; background: #fffffff0; }
-    .reset-view {
+    .hint span { display: inline-block; padding: 5px 10px; border-radius: 6px; background: var(--hint-bg); }
+    .hint span.error { color: var(--error); }
+    .reset-view, .theme-toggle {
       position: absolute;
       top: 12px;
       right: 12px;
@@ -166,22 +203,26 @@
       height: 36px;
       padding: 0;
       border-radius: 50%;
-      box-shadow: 0 1px 4px #20242c14;
+      box-shadow: 0 1px 4px var(--shadow);
       touch-action: manipulation;
     }
     .reset-view:disabled { cursor: default; }
+    .theme-toggle { top: 56px; }
+    .theme-toggle .moon-icon { display: none; }
+    :root[data-theme="dark"] .theme-toggle .sun-icon { display: none; }
+    :root[data-theme="dark"] .theme-toggle .moon-icon { display: block; }
     .header-toggle {
       position: absolute;
-      top: 56px;
+      top: 100px;
       right: 12px;
       z-index: 2;
       padding: 7px 10px;
       font-size: 12px;
-      box-shadow: 0 1px 4px #20242c14;
+      box-shadow: 0 1px 4px var(--shadow);
       touch-action: manipulation;
     }
     .header-toggle[hidden] { display: none; }
-    .header-toggle[aria-pressed="true"] { border-color: #c7d2fe; background: #eef2ff; color: #4338ca; }
+    .header-toggle[aria-pressed="true"] { border-color: var(--active-border); background: var(--active-bg); color: var(--active-text); }
     .standalone { height: 100dvh; }
     .standalone .preview { height: 100%; border: 0; border-radius: 0; }
     @media (max-width: 700px) {
@@ -240,12 +281,118 @@
               <path d="M3 10a9 9 0 1 1 2.6 8.4M3 4v6h6" />
             </svg>
           </button>
+          <button class="theme-toggle" type="button" title="현재 밝은 모드 · 다크 모드로 전환" aria-label="현재 밝은 모드 · 다크 모드로 전환" aria-pressed="false">
+            <svg class="sun-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="4" />
+              <path d="M12 2v2m0 16v2M2 12h2m16 0h2M4.93 4.93l1.42 1.42m11.3 11.3 1.42 1.42M4.93 19.07l1.42-1.42m11.3-11.3 1.42-1.42" />
+            </svg>
+            <svg class="moon-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z" />
+            </svg>
+          </button>
           <button class="header-toggle" type="button" title="헤더가 상단을 벗어날 때 고정" aria-label="헤더 상단 고정" aria-pressed="true" hidden>Header 고정 ON</button>
         </div>
       </section>
     </div>
   </main>
   <script>
+    // Shared with the standalone popup; each window owns its theme and renderer.
+    function bindThemeToggle(initialTheme, onChange) {
+      const button = document.querySelector('.theme-toggle');
+      let theme = initialTheme === 'dark' ? 'dark' : 'light';
+      const apply = () => {
+        document.documentElement.dataset.theme = theme;
+        document.querySelector('meta[name="color-scheme"]')?.setAttribute('content', theme);
+        const label = theme === 'dark' ? '현재 다크 모드 · 밝은 모드로 전환' : '현재 밝은 모드 · 다크 모드로 전환';
+        button.title = label;
+        button.setAttribute('aria-label', label);
+        button.setAttribute('aria-pressed', String(theme === 'dark'));
+      };
+      button.addEventListener('pointerdown', event => event.stopPropagation());
+      button.addEventListener('dblclick', event => event.stopPropagation());
+      button.addEventListener('click', () => {
+        theme = theme === 'dark' ? 'light' : 'dark';
+        apply();
+        onChange(theme);
+      });
+      apply();
+    }
+
+    function createDiagramRenderer() {
+      let mermaidPromise, renderId = 0;
+      const prefix = `diagram-${Math.random().toString(36).slice(2)}`;
+      const load = () => {
+        if (!mermaidPromise) {
+          mermaidPromise = import('https://cdn.jsdelivr.net/npm/mermaid@12.2.0/dist/mermaid.esm.min.mjs')
+            .then(({ default: mermaid }) => mermaid)
+            .catch(() => {
+              mermaidPromise = undefined;
+              throw new Error('Mermaid를 불러오지 못했습니다. 인터넷 연결을 확인한 뒤 다시 렌더링하세요.');
+            });
+        }
+        return mermaidPromise;
+      };
+      return {
+        load,
+        async render(source, theme) {
+          const mermaid = await load();
+          mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', suppressErrorRendering: true,
+            theme: theme === 'dark' ? 'dark' : 'default', darkMode: theme === 'dark', fontFamily: 'system-ui, sans-serif' });
+          const scratch = document.createElement('div');
+          scratch.style.cssText = 'position:fixed;left:-100000px;top:0;width:1200px;visibility:hidden;pointer-events:none;';
+          document.body.append(scratch);
+          try {
+            const { svg } = await mermaid.render(`${prefix}-${++renderId}`, source, scratch);
+            return svg;
+          } finally {
+            scratch.remove();
+          }
+        }
+      };
+    }
+
+    function initializePopup(svg, source, initialTheme) {
+      const viewport = document.querySelector('.viewport');
+      const viewer = createViewer(viewport);
+      const renderer = createDiagramRenderer();
+      const button = viewport.querySelector('.theme-toggle');
+      const hint = viewport.querySelector('.hint span');
+      const hintText = hint.textContent;
+      hint.setAttribute('role', 'status');
+      let currentTheme = initialTheme, renderedTheme = initialTheme, updating = false;
+      bindThemeToggle(initialTheme, theme => {
+        currentTheme = theme;
+        hint.textContent = hintText;
+        hint.classList.remove('error');
+        void updateTheme();
+      });
+      viewer.setSVG(svg);
+      async function updateTheme() {
+        if (updating) return;
+        updating = true;
+        button.setAttribute('aria-busy', 'true');
+        try {
+          while (renderedTheme !== currentTheme) {
+            const requestedTheme = currentTheme;
+            try {
+              const markup = await renderer.render(source, requestedTheme);
+              if (requestedTheme !== currentTheme) continue;
+              viewer.setSVG(markup, true);
+              renderedTheme = requestedTheme;
+            } catch (error) {
+              if (requestedTheme !== currentTheme) continue;
+              hint.textContent = error.message || String(error);
+              hint.classList.add('error');
+              break;
+            }
+          }
+        } finally {
+          updating = false;
+          button.setAttribute('aria-busy', 'false');
+        }
+      }
+    }
+
     // This function is also embedded in the popup, so that it works after the editor closes.
     function createViewer(viewport) {
       const drawing = viewport.querySelector('.drawing');
@@ -392,9 +539,10 @@
           }
         }
       };
+      const getFitScale = () => Math.max(0.001, Math.min(1, Math.max(1, viewport.clientWidth - 64) / width, Math.max(1, viewport.clientHeight - 80) / height));
       const fit = () => {
         if (!width || !height) return;
-        fitScale = Math.max(0.001, Math.min(1, Math.max(1, viewport.clientWidth - 64) / width, Math.max(1, viewport.clientHeight - 80) / height));
+        fitScale = getFitScale();
         scale = fitScale;
         x = (viewport.clientWidth - width * scale) / 2;
         y = (viewport.clientHeight - height * scale) / 2;
@@ -495,7 +643,8 @@
             drawing.after(empty);
           }
         },
-        setSVG(markup) {
+        setSVG(markup, preserveView = false) {
+          const keepView = preserveView && width > 0 && height > 0;
           drawing.innerHTML = markup;
           const svg = drawing.querySelector('svg');
           const box = svg.viewBox.baseVal;
@@ -527,7 +676,13 @@
           if (!contentBounds.length) contentBounds = measure('rect, circle, ellipse, polygon, image, path, line, polyline');
           viewport.querySelector('.empty')?.remove();
           resetButton.disabled = false;
-          fit();
+          if (keepView) {
+            fitScale = getFitScale();
+            zoom(1, viewport.clientWidth / 2, viewport.clientHeight / 2);
+            paint();
+          } else {
+            fit();
+          }
         }
       };
     }
@@ -614,10 +769,11 @@
     const viewer = createViewer(document.querySelector('.viewport'));
     const previewMarkup = document.querySelector('.preview').outerHTML;
     const styles = document.querySelector('style').textContent;
-    let mermaidPromise;
+    const diagramRenderer = createDiagramRenderer();
+    let currentTheme = 'light';
+    let lastRenderedSource = '', preserveViewOnThemeChange = false;
     let rendering = false;
     let pendingTabRender = false;
-    let renderId = 0;
     const codeTabButtons = [...document.querySelectorAll('.code-tabs [role="tab"]')];
     const codeTabPanel = document.getElementById('code-tab-panel');
     const storageStatus = document.getElementById('storage-status');
@@ -687,6 +843,8 @@
       // Flush the outgoing code and new active tab in a single storage write.
       saveCodeTabs();
       viewer.clear();
+      lastRenderedSource = '';
+      preserveViewOnThemeChange = false;
       status.className = '';
       renderSelectedTab();
     };
@@ -727,24 +885,22 @@
       if (document.visibilityState === 'hidden') saveCodeTabs();
     });
 
-    function loadMermaid() {
-      if (!mermaidPromise) {
-        mermaidPromise = import('https://cdn.jsdelivr.net/npm/mermaid@12.2.0/dist/mermaid.esm.min.mjs')
-          .then(({ default: mermaid }) => {
-            mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', suppressErrorRendering: true, theme: 'default', fontFamily: 'system-ui, sans-serif' });
-            return mermaid;
-          })
-          .catch(() => {
-            mermaidPromise = undefined;
-            throw new Error('Mermaid를 불러오지 못했습니다. 인터넷 연결을 확인한 뒤 다시 렌더링하세요.');
-          });
+    bindThemeToggle(currentTheme, theme => {
+      currentTheme = theme;
+      tabRevision++;
+      preserveViewOnThemeChange = true;
+      if (!editor.value.trim()) {
+        viewer.clear();
+        lastRenderedSource = '';
       }
-      return mermaidPromise;
-    }
+      status.className = '';
+      renderSelectedTab();
+    });
 
     async function render(inNewWindow = false) {
       if (rendering) return;
       const requestedTabRevision = tabRevision;
+      const requestedTheme = currentTheme;
       status.className = '';
       const source = editor.value.trim();
       if (!source) {
@@ -768,23 +924,22 @@
       rendering = true;
       renderButton.disabled = windowButton.disabled = true;
       status.textContent = '렌더링 중…';
-      // Keep Mermaid's temporary elements isolated and remove them even on parse failures.
-      const scratch = document.createElement('div');
-      scratch.style.cssText = 'position:fixed;left:-100000px;top:0;width:1200px;visibility:hidden;pointer-events:none;';
-      document.body.append(scratch);
       try {
-        const mermaid = await loadMermaid();
+        await diagramRenderer.load();
         if (!popup && requestedTabRevision !== tabRevision) return;
-        const { svg } = await mermaid.render(`diagram-${++renderId}`, source, scratch);
+        const svg = await diagramRenderer.render(source, requestedTheme);
         if (popup) {
           if (popup.closed) throw new Error('결과 창이 닫혔습니다. 새 창 렌더링을 다시 실행하세요.');
-          // Escape < so labels cannot terminate the popup's script element.
+          // Escape < so code and labels cannot terminate the popup's script element.
           const svgLiteral = JSON.stringify(svg).replace(/</g, '\\u003c');
+          const sourceLiteral = JSON.stringify(source).replace(/</g, '\\u003c');
           popup.document.open();
-          popup.document.write(`<!doctype html><html lang="ko"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Mermaid Viewer</title><style>${styles}</style><\/head><body class="standalone">${previewMarkup}<script>(${createViewer.toString()})(document.querySelector('.viewport')).setSVG(${svgLiteral});<\/script><\/body><\/html>`);
+          popup.document.write(`<!doctype html><html lang="ko" data-theme="${requestedTheme}"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="${requestedTheme}"><title>Mermaid Viewer</title><style>${styles}</style><\/head><body class="standalone">${previewMarkup}<script>${bindThemeToggle.toString()}\n${createDiagramRenderer.toString()}\n${createViewer.toString()}\n(${initializePopup.toString()})(${svgLiteral}, ${sourceLiteral}, ${JSON.stringify(requestedTheme)});<\/script><\/body><\/html>`);
           popup.document.close();
         } else if (requestedTabRevision === tabRevision) {
-          viewer.setSVG(svg);
+          viewer.setSVG(svg, source === lastRenderedSource && preserveViewOnThemeChange);
+          lastRenderedSource = source;
+          preserveViewOnThemeChange = false;
         }
         if (requestedTabRevision === tabRevision) {
           status.textContent = inNewWindow ? '새 창 렌더링 완료' : '렌더링 완료 · ⌘ / Ctrl + Enter로 다시 렌더링';
@@ -796,7 +951,6 @@
           status.textContent = error.message || String(error);
         }
       } finally {
-        scratch.remove();
         rendering = false;
         renderButton.disabled = windowButton.disabled = false;
         // Process only the latest selected tab after the current render settles.
