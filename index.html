@@ -60,9 +60,10 @@
     .editor[hidden] { display: none; }
     .editor-header { position: relative; display: flex; align-items: center; gap: 10px; }
     .code-tab-picker { display: flex; }
-    .code-tab-trigger, .rename-tab {
+    .code-tab-trigger, .rename-tab, .backup-button, .backup-toast-close {
       display: grid;
       place-items: center;
+      flex: none;
       width: 28px;
       height: 28px;
       padding: 0;
@@ -157,6 +158,25 @@
     #status { margin: 0; min-height: 21px; color: var(--muted); font-size: 12px; }
     #status.error { color: var(--error); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 160px; overflow: auto; }
     #storage-status { margin: 0; color: var(--error); font-size: 12px; }
+    .backup-toast {
+      position: fixed;
+      right: 20px;
+      bottom: 20px;
+      z-index: 20;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      max-width: min(440px, calc(100vw - 40px));
+      padding: 12px 14px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      background: var(--surface);
+      box-shadow: 0 4px 16px var(--shadow);
+    }
+    .backup-toast.error { color: var(--error); border-color: var(--error); }
+    .backup-toast[hidden] { display: none; }
+    #backup-toast-message { overflow-wrap: anywhere; white-space: pre-line; }
     .preview-shell { position: relative; min-width: 0; min-height: 0; }
     .preview-shell > .preview { height: 100%; }
     .editor-resizer {
@@ -312,6 +332,17 @@
             </div>
           </div>
         </div>
+        <button id="import-backup" class="backup-button" type="button" title="백업 가져오기 (Import)" aria-label="백업 가져오기 (Import)">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M12 16V3m-5 5 5-5 5 5" />
+          </svg>
+        </button>
+        <button id="export-backup" class="backup-button" type="button" title="백업 내보내기 (Export)" aria-label="백업 내보내기 (Export)">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M12 3v13m-5-5 5 5 5-5" />
+          </svg>
+        </button>
+        <input id="backup-file" type="file" accept=".md,text/markdown" hidden>
       </div>
       <div id="code-tab-panel" class="code-tab-panel" role="tabpanel" aria-labelledby="code-tab-1">
         <textarea id="code" spellcheck="false" autocomplete="off" autocapitalize="off" wrap="off" aria-label="Mermaid 코드 편집기">flowchart LR
@@ -359,7 +390,73 @@
       </section>
     </div>
   </main>
+  <div id="backup-toast" class="backup-toast" role="alert" aria-atomic="true" hidden>
+    <span id="backup-toast-message"></span>
+    <button id="close-backup-toast" class="backup-toast-close" type="button" title="알림 닫기" aria-label="알림 닫기">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="m6 6 12 12M6 18 18 6" /></svg>
+    </button>
+  </div>
   <script>
+    function serializeMarkdownBackup(codes, names) {
+      return codes.map((code, index) => {
+        const name = (names[index] || 'Untitled').replace(/[\\[\]]/g, '\\$&');
+        // Use a longer Markdown fence when the source itself contains backticks.
+        let fenceLength = 3;
+        for (const match of code.matchAll(/`+/g)) fenceLength = Math.max(fenceLength, match[0].length + 1);
+        const fence = '`'.repeat(fenceLength);
+        return `# ${index + 1} [${name}]\n## code\n${fence}mermaid\n${code}\n${fence}`;
+      }).join('\n\n') + '\n';
+    }
+
+    function parseMarkdownBackup(text, tabCount) {
+      const lines = text.replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n').split('\n');
+      const codes = Array(tabCount).fill(''), names = Array(tabCount).fill('');
+      const seen = new Set();
+      let line = 0;
+      const fail = message => { throw new Error(`백업 형식 오류 (${line + 1}행): ${message}`); };
+      const skipBlankLines = () => {
+        while (line < lines.length && /^[ \t]*$/.test(lines[line])) line++;
+      };
+      skipBlankLines();
+      if (line === lines.length) fail('탭 내용이 없는 파일입니다.');
+      while (line < lines.length) {
+        const heading = /^#[ \t]+([1-9]\d*)[ \t]+\[(.*)\][ \t]*$/.exec(lines[line]);
+        if (!heading) fail('"# 탭번호 [탭 이름]" 제목이 필요합니다.');
+        const number = Number(heading[1]);
+        if (!Number.isInteger(number) || number > tabCount) fail(`탭 번호는 1~${tabCount}만 사용할 수 있습니다.`);
+        if (seen.has(number)) fail(`${number}번 탭이 중복되었습니다.`);
+        const name = heading[2].replace(/\\([\\[\]])/g, '$1').trim() || 'Untitled';
+        if (name.length > 60) fail('탭 이름은 60자 이하여야 합니다.');
+        line++;
+        skipBlankLines();
+        // Accept both the documented section heading and the shorter example format.
+        if (/^##[ \t]+code[ \t]*$/.test(lines[line] || '')) {
+          line++;
+          skipBlankLines();
+        }
+        const opening = /^(`{3,})[ \t]*mermaid[ \t]*$/.exec(lines[line] || '');
+        if (!opening) fail('mermaid 코드 블록이 필요합니다.');
+        line++;
+        const body = [];
+        let closed = false;
+        while (line < lines.length) {
+          const closing = /^(`{3,})[ \t]*$/.exec(lines[line]);
+          if (closing && closing[1].length >= opening[1].length) {
+            closed = true;
+            break;
+          }
+          body.push(lines[line++]);
+        }
+        if (!closed) fail(`${number}번 탭의 코드 블록이 닫히지 않았습니다.`);
+        seen.add(number);
+        codes[number - 1] = body.join('\n');
+        names[number - 1] = name;
+        line++;
+        skipBlankLines();
+      }
+      return { codes, names, activeTab: Math.min(...seen) - 1, count: seen.size };
+    }
+
     // Shared with the standalone popup; each window owns its theme and renderer.
     function bindThemeToggle(initialTheme, onChange) {
       const button = document.querySelector('.theme-toggle');
@@ -1116,6 +1213,106 @@
     window.addEventListener('pagehide', flushCodeTabs);
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'hidden') flushCodeTabs();
+    });
+
+    const importBackupButton = document.getElementById('import-backup');
+    const exportBackupButton = document.getElementById('export-backup');
+    const backupFileInput = document.getElementById('backup-file');
+    const backupToast = document.getElementById('backup-toast');
+    const backupToastMessage = document.getElementById('backup-toast-message');
+    let backupToastTimer, importingBackup = false;
+    const hideBackupToast = () => {
+      clearTimeout(backupToastTimer);
+      backupToast.hidden = true;
+    };
+    const showBackupToast = (message, isError = true) => {
+      clearTimeout(backupToastTimer);
+      backupToast.classList.toggle('error', isError);
+      backupToast.setAttribute('role', isError ? 'alert' : 'status');
+      backupToastMessage.textContent = message;
+      backupToast.hidden = false;
+      backupToastTimer = setTimeout(hideBackupToast, isError ? 8000 : 4000);
+    };
+    document.getElementById('close-backup-toast').addEventListener('click', hideBackupToast);
+    exportBackupButton.addEventListener('click', () => {
+      closeTabMenu();
+      const codes = codeTabs.slice();
+      codes[activeCodeTab] = editor.value;
+      try {
+        const markdown = serializeMarkdownBackup(codes, codeTabNames);
+        const url = URL.createObjectURL(new Blob([markdown], { type: 'text/markdown;charset=utf-8' }));
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `mermaid-backup-${new Date().toISOString().replace(/[:.]/g, '-')}.md`;
+        document.body.append(link);
+        try {
+          link.click();
+        } finally {
+          link.remove();
+          setTimeout(() => URL.revokeObjectURL(url), 1000);
+        }
+      } catch {
+        showBackupToast('백업 파일을 만들지 못했습니다. 다시 시도하세요.');
+      }
+    });
+    importBackupButton.addEventListener('click', () => {
+      if (importingBackup) return;
+      closeTabMenu();
+      backupFileInput.click();
+    });
+    backupFileInput.addEventListener('change', async () => {
+      const file = backupFileInput.files[0];
+      backupFileInput.value = '';
+      if (!file || importingBackup) return;
+      importingBackup = true;
+      importBackupButton.disabled = true;
+      importBackupButton.setAttribute('aria-busy', 'true');
+      hideBackupToast();
+      try {
+        if (!/\.md$/i.test(file.name)) throw new Error('.md 형식의 백업 파일을 선택하세요.');
+        let text;
+        try {
+          text = await file.text();
+        } catch {
+          throw new Error('백업 파일을 읽지 못했습니다. 다시 선택하세요.');
+        }
+        const backup = parseMarkdownBackup(text, codeTabCount);
+        const state = JSON.stringify({ codes: backup.codes, names: backup.names, activeTab: backup.activeTab });
+        // Validate the entire file and persist it before replacing any current tabs.
+        try {
+          localStorage.setItem(codeStorageKey, state);
+        } catch {
+          throw new Error('백업을 저장하지 못했습니다. 저장 공간이나 브라우저 설정을 확인하세요. 기존 탭은 유지됩니다.');
+        }
+        clearTimeout(saveTimer);
+        saveTimer = undefined;
+        finishTabRename(false);
+        codeTabs = backup.codes;
+        codeTabNames = backup.names;
+        activeCodeTab = backup.activeTab;
+        codeTabPage = Math.floor(activeCodeTab / codeTabsPerPage);
+        savedTabState = state;
+        tabRevision++;
+        closeTabMenu();
+        editor.value = codeTabs[activeCodeTab];
+        editor.setSelectionRange(0, 0);
+        editor.scrollTop = editor.scrollLeft = 0;
+        syncCodeTabUI();
+        viewer.clear();
+        lastRenderedSource = '';
+        preserveViewOnThemeChange = false;
+        storageStatus.hidden = true;
+        status.className = '';
+        editor.focus({ preventScroll: true });
+        renderSelectedTab();
+        showBackupToast(`${backup.count}개 탭을 가져왔습니다. 파일에 없는 탭은 비웠습니다.`, false);
+      } catch (error) {
+        showBackupToast(error.message || '백업을 가져오지 못했습니다.');
+      } finally {
+        importingBackup = false;
+        importBackupButton.disabled = false;
+        importBackupButton.setAttribute('aria-busy', 'false');
+      }
     });
 
     bindThemeToggle(currentTheme, theme => {
