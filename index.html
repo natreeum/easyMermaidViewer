@@ -60,7 +60,7 @@
     .editor[hidden] { display: none; }
     .editor-header { position: relative; display: flex; align-items: center; gap: 10px; }
     .code-tab-picker { display: flex; }
-    .code-tab-trigger, .rename-tab, .backup-button, .format-code, .backup-toast-close {
+    .code-tab-trigger, .rename-tab, .backup-button, .format-code {
       display: grid;
       place-items: center;
       flex: none;
@@ -173,7 +173,11 @@
       color: var(--text);
       background: var(--surface);
       box-shadow: 0 4px 16px var(--shadow);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 300ms ease;
     }
+    .backup-toast.visible { opacity: .85; pointer-events: auto; }
     .backup-toast.error { color: var(--error); border-color: var(--error); }
     .backup-toast[hidden] { display: none; }
     #backup-toast-message { overflow-wrap: anywhere; white-space: pre-line; }
@@ -397,9 +401,6 @@
   </main>
   <div id="backup-toast" class="backup-toast" role="alert" aria-atomic="true" hidden>
     <span id="backup-toast-message"></span>
-    <button id="close-backup-toast" class="backup-toast-close" type="button" title="알림 닫기" aria-label="알림 닫기">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="m6 6 12 12M6 18 18 6" /></svg>
-    </button>
   </div>
   <script>
     function formatMermaidCode(source) {
@@ -1154,6 +1155,7 @@
         localStorage.setItem(codeStorageKey, state);
         savedTabState = state;
         storageStatus.hidden = true;
+        showBackupToast('💾 Saved!', false, 1500);
       } catch {
         showStorageError('코드를 저장하지 못했습니다. 현재 내용은 이 페이지에서만 유지됩니다.');
       }
@@ -1343,20 +1345,38 @@
     const backupFileInput = document.getElementById('backup-file');
     const backupToast = document.getElementById('backup-toast');
     const backupToastMessage = document.getElementById('backup-toast-message');
-    let backupToastTimer, importingBackup = false;
+    const backupToastFadeDuration = 300;
+    let backupToastTimer, backupToastHideTimer, backupToastFadeEnd = 0, importingBackup = false;
     const hideBackupToast = () => {
       clearTimeout(backupToastTimer);
-      backupToast.hidden = true;
+      clearTimeout(backupToastHideTimer);
+      if (backupToast.hidden) return;
+      backupToast.classList.remove('visible');
+      backupToast.inert = true;
+      backupToastHideTimer = setTimeout(() => {
+        backupToast.hidden = true;
+      }, backupToastFadeDuration);
     };
-    const showBackupToast = (message, isError = true) => {
+    const showBackupToast = (message, isError = true, duration = isError ? 8000 : 4000) => {
       clearTimeout(backupToastTimer);
+      clearTimeout(backupToastHideTimer);
+      if (!backupToast.classList.contains('visible')) {
+        backupToastFadeEnd = performance.now() + backupToastFadeDuration;
+      }
       backupToast.classList.toggle('error', isError);
       backupToast.setAttribute('role', isError ? 'alert' : 'status');
       backupToastMessage.textContent = message;
-      backupToast.hidden = false;
-      backupToastTimer = setTimeout(hideBackupToast, isError ? 8000 : 4000);
+      if (backupToast.hidden) {
+        backupToast.hidden = false;
+        // Commit opacity: 0 before starting the transition from a hidden element.
+        void backupToast.offsetWidth;
+      }
+      backupToast.inert = false;
+      backupToast.classList.add('visible');
+      // Refresh the hold time without restarting an in-progress fade-in.
+      const remainingFade = Math.max(0, backupToastFadeEnd - performance.now());
+      backupToastTimer = setTimeout(hideBackupToast, remainingFade + duration);
     };
-    document.getElementById('close-backup-toast').addEventListener('click', hideBackupToast);
     exportBackupButton.addEventListener('click', () => {
       closeTabMenu();
       const codes = codeTabs.slice();
