@@ -52,7 +52,7 @@
       --shadow: #00000040;
     }
     * { box-sizing: border-box; }
-    :where(body, button, textarea, .code-tab-name-input, .code-tab-menu, .preview,
+    :where(body, button, textarea, .code-tab-panel, .code-tab-name-input, .code-tab-menu, .preview,
       .participant-header, .empty, .hint, .hint span, #status, #storage-status) {
       transition: var(--theme-transition);
     }
@@ -137,23 +137,32 @@
     }
     .code-tab-name-input::placeholder { color: var(--muted); }
     .code-tab-popover[hidden], .code-tab-row[hidden], .code-tab-row > [hidden] { display: none; }
-    .code-tab-panel { display: flex; flex: 1; min-height: 0; }
+    .code-tab-panel {
+      position: relative;
+      display: flex;
+      flex: 1;
+      min-height: 180px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface);
+    }
+    .code-tab-panel:focus-within { outline: 2px solid var(--focus); outline-offset: 1px; }
     main.editor-collapsed { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); height: 100dvh; }
     label { font-weight: 650; }
     textarea {
       flex: 1;
       width: 100%;
-      min-height: 180px;
+      min-height: 0;
       resize: none;
       padding: 16px;
-      border: 1px solid var(--border);
-      border-radius: 8px;
+      border: 0;
+      border-radius: 7px;
       color: var(--editor-text);
       background: var(--surface);
       font: 14px/1.7 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
       tab-size: 2;
     }
-    textarea:focus { outline: 2px solid var(--focus); outline-offset: 1px; }
+    textarea:focus { outline: none; }
     .actions { display: flex; flex-wrap: wrap; gap: 8px; }
     button {
       padding: 9px 14px;
@@ -291,7 +300,7 @@
     }
     .hint span { display: inline-block; padding: 5px 10px; border-radius: 6px; background: var(--hint-bg); }
     .hint span.error { color: var(--error); }
-    .reset-view, .copy-diagram, .theme-toggle {
+    .reset-view, .copy-diagram, .theme-toggle, .copy-code {
       position: absolute;
       top: 12px;
       right: 12px;
@@ -315,11 +324,26 @@
     .copy-diagram { top: 56px; }
     .copy-diagram .copy-label, .copy-diagram .copy-check { display: none; }
     .copy-diagram:not(:disabled):not(.copied):is(:hover, :focus-visible) .copy-icon,
-    .copy-diagram.copied .copy-icon { display: none; }
+    .copy-diagram.copied .copy-icon, .copy-code.copied .copy-icon { display: none; }
     .copy-diagram:not(:disabled):not(.copied):is(:hover, :focus-visible) .copy-label,
-    .copy-diagram.copied .copy-check { display: block; }
-    .copy-diagram.copied { color: var(--active-text); border-color: var(--active-border); background: var(--active-bg); }
+    .copy-diagram.copied .copy-check, .copy-code.copied .copy-check { display: block; }
+    .copy-diagram.copied, .copy-code.copied { color: var(--active-text); border-color: var(--active-border); background: var(--active-bg); }
     .copy-diagram:disabled:not([aria-busy="true"]) { cursor: default; }
+    .copy-code {
+      top: 4px;
+      right: 8px;
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+      transition: opacity 150ms ease, visibility 0s linear 150ms, var(--theme-transition);
+    }
+    .code-tab-panel:hover .copy-code {
+      opacity: 1;
+      visibility: visible;
+      pointer-events: auto;
+      transition-delay: 0s;
+    }
+    .copy-code:not(.copied) .copy-check { display: none; }
     .theme-toggle { top: 100px; }
     .theme-toggle .moon-icon { display: none; }
     :root[data-theme="dark"] .theme-toggle .sun-icon { display: none; }
@@ -345,7 +369,7 @@
     }
     @media (max-width: 700px) {
       main { grid-template-columns: 1fr; grid-template-rows: minmax(240px, 40%) minmax(260px, 1fr); height: max(100dvh, 600px); padding: 12px; gap: 12px; }
-      textarea { min-height: 90px; }
+      .code-tab-panel { min-height: 90px; }
       .editor-resizer { display: none; }
       .editor-toggle { top: -6px; left: 50%; width: 44px; height: 28px; transform: translate(-50%, -50%); }
       .editor-toggle svg { transform: rotate(90deg); }
@@ -396,6 +420,12 @@
         <input id="backup-file" type="file" accept=".md,text/markdown" hidden>
       </div>
       <div id="code-tab-panel" class="code-tab-panel" role="tabpanel" aria-labelledby="code-tab-1">
+        <button id="copy-code" class="copy-code" type="button" title="Copy code" aria-label="코드 전체 복사" aria-busy="false">
+          <svg class="copy-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="8" y="7" width="12" height="15" rx="1" /><path d="M16 3H5a1 1 0 0 0-1 1v13" />
+          </svg>
+          <svg class="copy-check" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 4 4L19 6" /></svg>
+        </button>
         <textarea id="code" spellcheck="false" autocomplete="off" autocapitalize="off" wrap="off" aria-label="Mermaid 코드 편집기">flowchart LR
   A[코드 작성] --> B{Render}
   B --> C[현재 화면]
@@ -630,6 +660,47 @@
         skipBlankLines();
       }
       return { codes, names, activeTab: Math.min(...seen) - 1, count: seen.size };
+    }
+
+    function bindCodeCopy(editor, button, onError) {
+      let busy = false, revision = 0, timer;
+      const reset = () => {
+        revision++;
+        clearTimeout(timer);
+        button.classList.remove('copied');
+        button.title = 'Copy code';
+        button.setAttribute('aria-label', '코드 전체 복사');
+      };
+      editor.addEventListener('input', reset);
+      button.addEventListener('click', async () => {
+        if (busy) return;
+        reset();
+        const requestedRevision = revision;
+        const source = editor.value;
+        busy = button.disabled = true;
+        button.setAttribute('aria-busy', 'true');
+        try {
+          if (!navigator.clipboard?.writeText) {
+            throw new Error('코드 복사를 사용할 수 없습니다. 지원 브라우저에서 HTTPS 또는 localhost로 열어주세요.');
+          }
+          await navigator.clipboard.writeText(source);
+          if (requestedRevision !== revision || editor.value !== source) return;
+          button.classList.add('copied');
+          button.title = 'Copied!';
+          button.setAttribute('aria-label', '코드 복사 완료');
+          timer = setTimeout(reset, 1500);
+        } catch (error) {
+          if (requestedRevision === revision) {
+            onError(error.name === 'NotAllowedError'
+              ? '코드 복사가 허용되지 않았습니다. 브라우저의 클립보드 권한을 확인하세요.'
+              : error.message || '코드를 복사하지 못했습니다.');
+          }
+        } finally {
+          busy = button.disabled = false;
+          button.setAttribute('aria-busy', 'false');
+        }
+      });
+      return reset;
     }
 
     // Shared with the standalone popup; each window owns its theme and renderer.
@@ -1244,6 +1315,7 @@
     }
 
     const editor = document.getElementById('code');
+    const resetCodeCopy = bindCodeCopy(editor, document.getElementById('copy-code'), message => showBackupToast(message));
     const layout = document.querySelector('main');
     const codePanel = document.getElementById('code-panel');
     const editorToggle = document.getElementById('toggle-editor');
@@ -1458,6 +1530,7 @@
       codeTabPage = Math.floor(index / codeTabsPerPage);
       tabRevision++;
       editor.value = codeTabs[index];
+      resetCodeCopy();
       editor.setSelectionRange(0, 0);
       editor.scrollTop = editor.scrollLeft = 0;
       syncCodeTabUI();
@@ -1709,6 +1782,7 @@
         tabRevision++;
         closeTabMenu();
         editor.value = codeTabs[activeCodeTab];
+        resetCodeCopy();
         editor.setSelectionRange(0, 0);
         editor.scrollTop = editor.scrollLeft = 0;
         syncCodeTabUI();
