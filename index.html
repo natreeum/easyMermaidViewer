@@ -60,7 +60,7 @@
     .editor[hidden] { display: none; }
     .editor-header { position: relative; display: flex; align-items: center; gap: 10px; }
     .code-tab-picker { display: flex; }
-    .code-tab-trigger, .rename-tab, .backup-button, .backup-toast-close {
+    .code-tab-trigger, .rename-tab, .backup-button, .format-code, .backup-toast-close {
       display: grid;
       place-items: center;
       flex: none;
@@ -342,6 +342,11 @@
             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M12 3v13m-5-5 5 5 5-5" />
           </svg>
         </button>
+        <button id="format-code" class="format-code" type="button" title="코드 정렬 (Format code)" aria-label="코드 정렬 (Format code)">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="m5 4-3 3 3 3m14-6 3 3-3 3M10 7h4M3 14h18M7 18h14M7 22h10" />
+          </svg>
+        </button>
         <input id="backup-file" type="file" accept=".md,text/markdown" hidden>
       </div>
       <div id="code-tab-panel" class="code-tab-panel" role="tabpanel" aria-labelledby="code-tab-1">
@@ -397,6 +402,124 @@
     </button>
   </div>
   <script>
+    function formatMermaidCode(source) {
+      let diagram = '', depth = 0, quote = '', directive = false, frontmatter = false, rawBlock = '';
+      let firstContent = true;
+      const delimiters = [];
+      const isSequence = () => diagram === 'sequenceDiagram';
+      const isFlow = () => /^(?:flowchart|graph|block(?:-beta)?)$/.test(diagram);
+      const isState = () => /^stateDiagram(?:-v2)?$/.test(diagram);
+      const structured = () => isSequence() || isFlow() || isState()
+        || /^(?:classDiagram(?:-v2)?|erDiagram|requirementDiagram)$/.test(diagram);
+
+      // Mask labels before interpreting block keywords. Keep multiline label contents verbatim.
+      const scan = line => {
+        let syntax = '', comment = false;
+        for (let i = 0; i < line.length; i++) {
+          const char = line[i];
+          if (quote) {
+            if (char === '\\') { i++; continue; }
+            if (quote === 'markdown') {
+              if (char === '`' && line[i + 1] === '"') { quote = ''; i++; }
+            } else if (char === quote) quote = '';
+            continue;
+          }
+          if (char === '"' || char === '`') {
+            quote = char === '"' && line[i + 1] === '`' ? 'markdown' : char;
+            if (quote === 'markdown') i++;
+            syntax += 'x';
+            continue;
+          }
+          if (isFlow()) {
+            if ('[({'.includes(char)) { delimiters.push(char); syntax += 'x'; continue; }
+            if (delimiters.length) {
+              if (char === ({ '[': ']', '(': ')', '{': '}' })[delimiters.at(-1)]) delimiters.pop();
+              continue;
+            }
+          }
+          if (char === '%' && line[i + 1] === '%') { comment = true; break; }
+          // Entity terminators are part of labels, not statement separators.
+          if (char === '#') {
+            const entity = /^#[\w]+;/.exec(line.slice(i));
+            if (entity) { syntax += 'x'; i += entity[0].length - 1; continue; }
+          }
+          syntax += char;
+        }
+        return { syntax, comment };
+      };
+      const blockKind = statement => {
+        if (isSequence()) {
+          if (/^end$/.test(statement)) return 'close';
+          if (/^(?:else|and|option)(?:\s|$)/.test(statement)) return 'branch';
+          if (/^(?:loop|alt|opt|par|critical|break|rect|box)(?:\s|$)/.test(statement)) return 'open';
+        } else if (isFlow()) {
+          if (statement === 'end') return 'close';
+          if (/^(?:flowchart|graph)$/.test(diagram) ? /^subgraph(?:\s|$)/.test(statement)
+            : /^block(?:\s|:|$)/.test(statement)) return 'open';
+        } else {
+          if (statement === '}') return 'close';
+          if (/^classDiagram/.test(diagram) && /^(?:class|namespace)\s.*\{$/.test(statement)) return 'open';
+          if (isState() && /^state\s.*\{$/.test(statement)) return 'open';
+          if (/^(?:erDiagram|requirementDiagram)$/.test(diagram) && /^[^:{}]+\{$/.test(statement)) return 'open';
+        }
+        return '';
+      };
+
+      return source.split(/(\r?\n)/).map((line, index) => {
+        if (index % 2) return line;
+        const trimmed = line.trim();
+        if (firstContent && trimmed) {
+          firstContent = false;
+          if (trimmed === '---') { frontmatter = true; return line; }
+        }
+        if (frontmatter) {
+          if (trimmed === '---') frontmatter = false;
+          return line;
+        }
+        if (directive || (!quote && !delimiters.length && trimmed.startsWith('%%{'))) {
+          directive = !trimmed.includes('}%%');
+          return line;
+        }
+        if (rawBlock) {
+          if (rawBlock === 'note' ? /^end\s+note\s*;?$/.test(trimmed) : /^}\s*;?$/.test(trimmed)) rawBlock = '';
+          return line;
+        }
+        const continuation = Boolean(quote || delimiters.length);
+        if (!continuation && trimmed.startsWith('%%')) return line;
+        let header = false;
+        if (!diagram) {
+          if (!trimmed) return '';
+          diagram = /^[\w-]+/.exec(trimmed)?.[0] || '';
+          header = true;
+        }
+        // Indentation defines the structure of mindmap/kanban and some newer grammars.
+        // Leave unrecognised grammars untouched rather than flattening their hierarchy.
+        if (!structured()) return line;
+        if (!continuation && /^accDescr\s*\{/.test(trimmed)) {
+          if (!/}\s*$/.test(trimmed)) rawBlock = 'description';
+          return line;
+        }
+        if (!continuation && isState() && /^note\s+(?:left|right)\s+of\s+[^:]+$/.test(trimmed)) {
+          rawBlock = 'note';
+          return line;
+        }
+        const { syntax, comment } = scan(line);
+        if (continuation) return line;
+        if (!trimmed) return '';
+        const statements = syntax.split(';').map(value => value.trim()).filter(Boolean);
+        if (header) statements.shift();
+        const firstKind = blockKind(statements[0] || '');
+        const indent = Math.max(0, depth - (firstKind === 'close' || firstKind === 'branch' ? 1 : 0));
+        for (const statement of statements) {
+          const kind = blockKind(statement);
+          if (kind === 'close') depth = Math.max(0, depth - 1);
+          if (kind === 'open') depth++;
+        }
+        const content = line.replace(/^[ \t]*/, '');
+        return '  '.repeat(header ? 0 : indent + 1) + (quote || delimiters.length || comment ? content : content.trimEnd());
+      }).join('');
+    }
+
     function serializeMarkdownBackup(codes, names) {
       return codes.map((code, index) => {
         const name = (names[index] || 'Untitled').replace(/[\\[\]]/g, '\\$&');
@@ -1388,6 +1511,43 @@
       }
     }
 
+    function formatEditor() {
+      closeTabMenu();
+      const { value, selectionStart: start, selectionEnd: end, selectionDirection: direction, scrollTop, scrollLeft } = editor;
+      if (!value.trim()) return;
+      const formatted = formatMermaidCode(value);
+      if (formatted === value) {
+        showBackupToast('정렬할 변경 사항이 없습니다.', false);
+        return;
+      }
+      const oldLines = value.split('\n'), newLines = formatted.split('\n');
+      const mapPosition = position => {
+        let oldOffset = 0, newOffset = 0;
+        for (let i = 0; i < oldLines.length; i++) {
+          if (position <= oldOffset + oldLines[i].length) {
+            const oldIndent = oldLines[i].match(/^[ \t]*/)[0].length;
+            const newIndent = newLines[i].match(/^[ \t]*/)[0].length;
+            const column = Math.max(0, position - oldOffset + newIndent - oldIndent);
+            return newOffset + Math.min(column, newLines[i].length);
+          }
+          oldOffset += oldLines[i].length + 1;
+          newOffset += newLines[i].length + 1;
+        }
+        return formatted.length;
+      };
+      editor.focus({ preventScroll: true });
+      editor.setSelectionRange(0, value.length);
+      if (!document.execCommand('insertText', false, formatted)) {
+        editor.setRangeText(formatted, 0, value.length, 'end');
+        editor.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+      editor.setSelectionRange(mapPosition(start), mapPosition(end), direction);
+      editor.scrollTop = scrollTop;
+      editor.scrollLeft = scrollLeft;
+      scheduleCodeSave();
+      showBackupToast('현재 탭의 코드를 정렬했습니다.', false);
+    }
+
     function indentEditor(outdent) {
       const { value, selectionStart: start, selectionEnd: end, selectionDirection: direction, scrollTop, scrollLeft } = editor;
       let from = start, to = end, replacement = '  ', nextStart = start + 2, nextEnd = start + 2;
@@ -1426,6 +1586,7 @@
 
     renderButton.addEventListener('click', () => render());
     windowButton.addEventListener('click', () => render(true));
+    document.getElementById('format-code').addEventListener('click', formatEditor);
     editor.addEventListener('keydown', event => {
       if (event.isComposing) return;
       if (event.key === 'Tab' && !event.metaKey && !event.ctrlKey && !event.altKey) {
