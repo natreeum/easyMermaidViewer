@@ -188,7 +188,8 @@
       border: 0;
       border-radius: 7px;
       color: var(--editor-text);
-      background: var(--surface);
+      /* Let the panel paint the theme transition behind the native textarea. */
+      background: transparent;
       font: 14px/1.7 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
       tab-size: 2;
     }
@@ -738,22 +739,24 @@
     function bindThemeToggle(initialTheme, onChange) {
       const button = document.querySelector('.theme-toggle');
       let theme = initialTheme === 'dark' ? 'dark' : 'light';
-      const apply = () => {
-        document.documentElement.dataset.theme = theme;
-        document.querySelector('meta[name="color-scheme"]')?.setAttribute('content', theme);
-        const label = theme === 'dark' ? '현재 다크 모드 · 밝은 모드로 전환' : '현재 밝은 모드 · 다크 모드로 전환';
+      const apply = (readyTheme = theme) => {
+        if (readyTheme !== theme) return;
+        document.documentElement.dataset.theme = readyTheme;
+        document.querySelector('meta[name="color-scheme"]')?.setAttribute('content', readyTheme);
+        const label = readyTheme === 'dark' ? '현재 다크 모드 · 밝은 모드로 전환' : '현재 밝은 모드 · 다크 모드로 전환';
         button.title = label;
         button.setAttribute('aria-label', label);
-        button.setAttribute('aria-pressed', String(theme === 'dark'));
+        button.setAttribute('aria-pressed', String(readyTheme === 'dark'));
       };
       button.addEventListener('pointerdown', event => event.stopPropagation());
       button.addEventListener('dblclick', event => event.stopPropagation());
       button.addEventListener('click', () => {
         theme = theme === 'dark' ? 'light' : 'dark';
-        apply();
+        // Keep the displayed palette until the new diagram is ready to fade in.
         onChange(theme);
       });
       apply();
+      return apply;
     }
 
     function createDiagramRenderer() {
@@ -917,7 +920,7 @@
         hint.classList.add('error');
       });
       let currentTheme = initialTheme, renderedTheme = initialTheme, updating = false;
-      bindThemeToggle(initialTheme, theme => {
+      const applyTheme = bindThemeToggle(initialTheme, theme => {
         currentTheme = theme;
         hint.textContent = hintText;
         hint.classList.remove('error');
@@ -934,7 +937,7 @@
             try {
               const markup = await renderer.render(source, requestedTheme);
               if (requestedTheme !== currentTheme) continue;
-              viewer.setSVG(markup, true);
+              viewer.setSVG(markup, true, () => applyTheme(requestedTheme));
               renderedTheme = requestedTheme;
             } catch (error) {
               if (requestedTheme !== currentTheme) continue;
@@ -945,6 +948,8 @@
           }
         } finally {
           updating = false;
+          // Also settle the palette after an error or a return to the rendered theme.
+          applyTheme(currentTheme);
           button.setAttribute('aria-busy', 'false');
         }
       }
@@ -1293,7 +1298,7 @@
             drawing.after(empty);
           }
         },
-        setSVG(markup, preserveView = false) {
+        setSVG(markup, preserveView = false, onReady) {
           finishThemeFade();
           copyRevision++;
           resetCopyFeedback();
@@ -1310,7 +1315,6 @@
           svg.setAttribute('height', height);
           svg.style.width = `${width}px`;
           svg.style.height = `${height}px`;
-          copyBackground = getComputedStyle(viewport).getPropertyValue('--surface').trim();
           createHeader(svg, bounds);
           // Prefer labels so a large empty region inside the SVG cannot count as content.
           // Cache unscaled bounds once; panning and zooming need no per-element DOM reads.
@@ -1340,6 +1344,9 @@
           } else {
             fit();
           }
+          // Finish SVG layout and measurements before starting either transition.
+          onReady?.();
+          copyBackground = getComputedStyle(viewport).getPropertyValue('--surface').trim();
           if (outgoing) startThemeFade(outgoing, fadeDuration);
         }
       };
@@ -1541,6 +1548,7 @@
     const renderSelectedTab = () => {
       pendingTabRender = false;
       if (!editor.value.trim()) {
+        applyTheme(currentTheme);
         status.className = '';
         status.textContent = `${codeTabLabel(activeCodeTab)} · 코드를 입력하세요.`;
         return;
@@ -1833,7 +1841,7 @@
       }
     });
 
-    bindThemeToggle(currentTheme, theme => {
+    const applyTheme = bindThemeToggle(currentTheme, theme => {
       currentTheme = theme;
       tabRevision++;
       preserveViewOnThemeChange = true;
@@ -1885,7 +1893,8 @@
           popup.document.write(`<!doctype html><html lang="ko" data-theme="${requestedTheme}"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="${requestedTheme}"><title>Mermaid Viewer</title><style>${styles}</style><\/head><body class="standalone">${previewMarkup}<script>${bindThemeToggle.toString()}\n${createDiagramRenderer.toString()}\n${diagramToPNG.toString()}\n${createViewer.toString()}\n(${initializePopup.toString()})(${svgLiteral}, ${sourceLiteral}, ${JSON.stringify(requestedTheme)});<\/script><\/body><\/html>`);
           popup.document.close();
         } else if (requestedTabRevision === tabRevision) {
-          viewer.setSVG(svg, source === lastRenderedSource && preserveViewOnThemeChange);
+          viewer.setSVG(svg, source === lastRenderedSource && preserveViewOnThemeChange,
+            () => applyTheme(requestedTheme));
           lastRenderedSource = source;
           preserveViewOnThemeChange = false;
         }
@@ -1895,6 +1904,7 @@
       } catch (error) {
         if (popup && !popup.closed) popup.close();
         if (requestedTabRevision === tabRevision) {
+          if (!popup) applyTheme(requestedTheme);
           status.className = 'error';
           status.textContent = error.message || String(error);
         }
