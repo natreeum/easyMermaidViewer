@@ -516,7 +516,7 @@
     <span id="backup-toast-message"></span>
   </div>
   <script>
-    function formatMermaidCode(source) {
+    function formatMermaidCode(source, lineMap) {
       let diagram = '', depth = 0, quote = '', directive = false, frontmatter = false, rawBlock = '';
       let firstContent = true;
       const delimiters = [];
@@ -579,8 +579,7 @@
         return '';
       };
 
-      return source.split(/(\r?\n)/).map((line, index) => {
-        if (index % 2) return line;
+      const formatLine = line => {
         const trimmed = line.trim();
         if (firstContent && trimmed) {
           firstContent = false;
@@ -631,7 +630,30 @@
         }
         const content = line.replace(/^[ \t]*/, '');
         return '  '.repeat(header ? 0 : indent + 1) + (quote || delimiters.length || comment ? content : content.trimEnd());
-      }).join('');
+      };
+
+      const parts = source.split(/(\r?\n)/);
+      let result = '', newlineRun = 0, lastNewlineLength = 0;
+      for (let index = 0; index < parts.length; index += 2) {
+        const line = parts[index], newline = parts[index + 1] || '';
+        const preserveBlankLines = frontmatter || directive || rawBlock || quote || delimiters.length
+          || (diagram && !structured());
+        const formatted = formatLine(line);
+        // Keep at most two line breaks outside whitespace-sensitive content.
+        const omit = !preserveBlankLines && !formatted && newline && newlineRun >= 2;
+        lineMap?.push({
+          offset: omit ? result.length - lastNewlineLength : result.length,
+          text: omit ? '' : formatted
+        });
+        if (omit) continue;
+        result += formatted + newline;
+        if (formatted) newlineRun = 0;
+        if (newline) {
+          newlineRun++;
+          lastNewlineLength = newline.length;
+        }
+      }
+      return result;
     }
 
     function serializeMarkdownBackup(codes, names) {
@@ -1919,24 +1941,25 @@
     function formatEditor() {
       closeTabMenu();
       const { value, selectionStart: start, selectionEnd: end, selectionDirection: direction, scrollTop, scrollLeft } = editor;
-      if (!value.trim()) return;
-      const formatted = formatMermaidCode(value);
+      if (!value) return;
+      const lineMap = [];
+      const formatted = formatMermaidCode(value, lineMap);
       if (formatted === value) {
         showBackupToast('정렬할 변경 사항이 없습니다.', false);
         return;
       }
-      const oldLines = value.split('\n'), newLines = formatted.split('\n');
+      const oldLines = value.split('\n');
       const mapPosition = position => {
-        let oldOffset = 0, newOffset = 0;
+        let oldOffset = 0;
         for (let i = 0; i < oldLines.length; i++) {
           if (position <= oldOffset + oldLines[i].length) {
+            const { offset, text } = lineMap[i];
             const oldIndent = oldLines[i].match(/^[ \t]*/)[0].length;
-            const newIndent = newLines[i].match(/^[ \t]*/)[0].length;
+            const newIndent = text.match(/^[ \t]*/)[0].length;
             const column = Math.max(0, position - oldOffset + newIndent - oldIndent);
-            return newOffset + Math.min(column, newLines[i].length);
+            return offset + Math.min(column, text.length);
           }
           oldOffset += oldLines[i].length + 1;
-          newOffset += newLines[i].length + 1;
         }
         return formatted.length;
       };
