@@ -72,7 +72,36 @@
     }
     .editor { display: flex; flex-direction: column; gap: 12px; min-width: 0; min-height: 0; }
     .editor[hidden] { display: none; }
-    .editor-header { position: relative; display: flex; align-items: center; gap: 10px; }
+    .editor-header { position: relative; z-index: 3; display: flex; align-items: center; gap: 10px; padding-top: 24px; }
+    .editor-header [data-tooltip] { position: relative; }
+    .editor-header [data-tooltip]::after {
+      content: attr(data-tooltip);
+      position: absolute;
+      bottom: calc(100% + 8px);
+      left: 50%;
+      z-index: 10;
+      transform: translateX(-50%);
+      padding: 6px 9px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--text);
+      color: var(--surface);
+      box-shadow: 0 2px 8px var(--shadow);
+      font-size: 12px;
+      font-weight: 500;
+      line-height: 1.4;
+      white-space: nowrap;
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+      transition: opacity 150ms ease, visibility 0s linear 150ms, var(--theme-transition);
+    }
+    .editor-header [data-tooltip]:not(:disabled):not([aria-expanded="true"]):is(:hover, :focus-visible)::after {
+      opacity: 1;
+      visibility: visible;
+      transition-delay: 0s;
+    }
+    .editor-header [data-tooltip-align="end"]::after { left: auto; right: 0; transform: none; }
     .code-tab-picker { display: flex; }
     .code-tab-trigger, .rename-tab, .backup-button, .format-code {
       display: grid;
@@ -368,7 +397,8 @@
       :root { --theme-duration: 0ms; }
     }
     @media (max-width: 700px) {
-      main { grid-template-columns: 1fr; grid-template-rows: minmax(240px, 40%) minmax(260px, 1fr); height: max(100dvh, 600px); padding: 12px; gap: 12px; }
+      main { grid-template-columns: 1fr; grid-template-rows: minmax(272px, 40%) minmax(260px, 1fr); height: max(100dvh, 600px); padding: 12px; gap: 12px; }
+      .editor-header { padding-top: 32px; }
       .code-tab-panel { min-height: 90px; }
       .editor-resizer { display: none; }
       .editor-toggle { top: -6px; left: 50%; width: 44px; height: 28px; transform: translate(-50%, -50%); }
@@ -384,7 +414,7 @@
       <div class="editor-header">
         <label for="code">Mermaid code</label>
         <div id="code-tab-picker" class="code-tab-picker">
-          <button id="code-tab-trigger" class="code-tab-trigger" type="button" title="코드 탭 목록" aria-label="코드 탭 목록" aria-expanded="false" aria-controls="code-tab-popover">
+          <button id="code-tab-trigger" class="code-tab-trigger" type="button" data-tooltip="Browse Diagrams" aria-label="Browse Diagrams" aria-expanded="false" aria-controls="code-tab-popover">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
               <circle cx="4" cy="6" r="1" /><circle cx="4" cy="12" r="1" /><circle cx="4" cy="18" r="1" />
               <path d="M9 6h12M9 12h12M9 18h12" />
@@ -402,17 +432,17 @@
             </div>
           </div>
         </div>
-        <button id="import-backup" class="backup-button" type="button" title="백업 가져오기 (Import)" aria-label="백업 가져오기 (Import)">
+        <button id="import-backup" class="backup-button" type="button" data-tooltip="백업 복원" aria-label="백업 복원">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M12 16V3m-5 5 5-5 5 5" />
           </svg>
         </button>
-        <button id="export-backup" class="backup-button" type="button" title="백업 내보내기 (Export)" aria-label="백업 내보내기 (Export)">
+        <button id="export-backup" class="backup-button" type="button" data-tooltip="전체 탭 백업" aria-label="전체 탭 백업">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M12 3v13m-5-5 5 5 5-5" />
           </svg>
         </button>
-        <button id="format-code" class="format-code" type="button" title="코드 정렬 (Format code)" aria-label="코드 정렬 (Format code)">
+        <button id="format-code" class="format-code" type="button" data-tooltip="코드 들여쓰기 정리" data-tooltip-align="end" aria-label="코드 들여쓰기 정리">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="m5 4-3 3 3 3m14-6 3 3-3 3M10 7h4M3 14h18M7 18h14M7 22h10" />
           </svg>
@@ -1484,8 +1514,7 @@
       codeTabsNext.disabled = pageEnd === codeTabCount;
       codeTabList.setAttribute('aria-label', `코드 탭 ${pageStart + 1}~${pageEnd}`);
       codeTabPanel.setAttribute('aria-labelledby', codeTabButtons[activeCodeTab].id);
-      codeTabTrigger.title = `코드 탭 목록 · 현재 ${codeTabLabel(activeCodeTab)}`;
-      codeTabTrigger.setAttribute('aria-label', codeTabTrigger.title);
+      codeTabTrigger.setAttribute('aria-label', `Browse Diagrams · 현재 ${codeTabLabel(activeCodeTab)}`);
       editor.setAttribute('aria-label', `Mermaid 코드 편집기 — ${codeTabLabel(activeCodeTab)}`);
     };
     const saveCodeTabs = () => {
